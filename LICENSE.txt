@@ -1,0 +1,15 @@
+UNLICENSED
+
+This software is provided "as is" and is protected by copyright law. All rights are reserved by the copyright holder.
+
+Definition:
+The "UNLICENSED" license means that the software is proprietary and is not granted for any use, distribution, or modification. You have no rights to use, copy, modify, distribute, or create derivative works of this software.
+
+Usage:
+You may not use, copy, modify, distribute, or create derivative works of this software without explicit permission from the copyright holder. This license is typically used for software that is not intended for public release or distribution.
+
+Legal Significance:
+Using, copying, modifying, distributing, or creating derivative works of this software without permission from the copyright holder may constitute copyright infringement and could result in legal action.
+
+Contact:
+For inquiries about licensing, please contact Jasmine Technology Solution PCL at sakkarin.nu@jasmine.com.
