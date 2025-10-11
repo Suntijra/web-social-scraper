@@ -1,4 +1,5 @@
 import eslint from '@eslint/js'
+import { defineConfig, globalIgnores } from 'eslint/config'
 import tseslint from 'typescript-eslint'
 import prettierPlugin from 'eslint-plugin-prettier/recommended' // Integrate prettier
 import importPlugin from 'eslint-plugin-import'
@@ -6,7 +7,8 @@ import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescrip
 import globals from 'globals'
 import unusedImportsPlugin from 'eslint-plugin-unused-imports'
 
-export default tseslint.config(
+export default defineConfig([
+  globalIgnores(['**/node_modules/', '.git/', 'dist/']),
   {
     ignores: ['node_modules/', 'dist/', 'build/'],
     languageOptions: {
@@ -17,7 +19,8 @@ export default tseslint.config(
     },
   },
   eslint.configs.recommended,
-  ...tseslint.configs.recommended,
+  tseslint.configs.strict,
+  tseslint.configs.stylistic,
   {
     files: ['**/*.ts'],
     languageOptions: {
@@ -104,5 +107,5 @@ export default tseslint.config(
       ],
     },
   },
-  prettierPlugin
-)
+  prettierPlugin,
+])
