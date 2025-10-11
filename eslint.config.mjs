@@ -13,8 +13,8 @@ export default defineConfig([
     ignores: ['node_modules/', 'dist/', 'build/'],
     languageOptions: {
       globals: {
-        ...globals.node, // เพิ่ม global ของ Node.js
-        ...globals.bun, // เพิ่ม global ของ Bun
+        ...globals.node,
+        ...globals.bun,
       },
     },
   },
