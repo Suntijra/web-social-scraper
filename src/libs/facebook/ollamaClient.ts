@@ -1,6 +1,6 @@
 import https from 'node:https'
 
-import axios, { AxiosInstance } from 'axios'
+import axios, { type AxiosInstance } from 'axios'
 
 import { appConfig } from './config'
 
@@ -46,7 +46,7 @@ const suffixMultiplier = (suffix: string): number => {
   }
 }
 
-const toNumberWithSuffix = (numericPart: string, suffix?: string): number | null => {
+const toNumberWithSuffix = (numericPart: string, suffix?: string | undefined): number | null => {
   const cleanedNumeric = numericPart.replace(/[,\s]/g, '')
   if (!cleanedNumeric) {
     return null
@@ -74,7 +74,7 @@ const parseNumericToken = (raw: unknown): number | null => {
   const suffixMatch = trimmed.match(/^([0-9]+(?:[.,][0-9]+)?)(?:\s*([kKmMbB]))?$/)
   if (suffixMatch) {
     const [, numericPart, suffix] = suffixMatch
-    const value = toNumberWithSuffix(numericPart, suffix)
+    const value = numericPart ? toNumberWithSuffix(numericPart, suffix) : null
     if (value !== null) {
       return value
     }

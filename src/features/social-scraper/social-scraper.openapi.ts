@@ -6,7 +6,8 @@ import { ERouteTag } from '#types/openapi.d'
 
 export const postSocialScraperSimulateDoc = describeRoute({
   summary: 'จำลองผลลัพธ์การสแครปโปรไฟล์โซเชียล',
-  description: 'รับข้อมูลโปรไฟล์และส่งผลลัพธ์จำลองกลับมาเพื่อใช้เป็นตัวอย่างการใช้งาน API',
+  description:
+    'สำหรับแพลตฟอร์ม Facebook: เปิดหน้าเว็บจริงด้วย Playwright, ทำความสะอาดเนื้อหาด้วย bodyCleaner และวิเคราะห์ engagement ผ่าน Ollama ก่อนส่งกลับเป็นผลลัพธ์ตัวอย่าง',
   tags: [ERouteTag.SOCIAL_SCRAPER],
   requestBody: {
     required: true,
