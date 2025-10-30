@@ -5,9 +5,9 @@ const removeTags = (html: string, tagNames: string[]): string => {
   }, html)
 }
 
-const removeHtmlComments = (html: string): string => {
-  return html.replace(/<!--([\s\S]*?)-->/g, ' ')
-}
+// const removeHtmlComments = (html: string): string => {
+//   return html.replace(/<!--([\s\S]*?)-->/g, ' ')
+// }
 
 const stripBase64DataUris = (html: string): string => {
   return html.replace(/data:[^;]+;base64,[A-Za-z0-9+/=]+/gi, ' ').replace(/[A-Za-z0-9+/=]{120,}/g, ' ')
@@ -27,8 +27,7 @@ const normalizeWhitespace = (text: string): string => {
  */
 export const cleanPageBody = (html: string): string => {
   const withoutNoisyTags = removeTags(html, ['script', 'style', 'noscript', 'template'])
-  const withoutComments = removeHtmlComments(withoutNoisyTags)
-  const withoutBase64 = stripBase64DataUris(withoutComments)
+  const withoutBase64 = stripBase64DataUris(withoutNoisyTags)
   const textOnly = stripRemainingTags(withoutBase64)
   return normalizeWhitespace(textOnly)
 }

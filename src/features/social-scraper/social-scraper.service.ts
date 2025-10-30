@@ -4,6 +4,7 @@ import InvalidParameterError from '#errors/invalid.parameter.error'
 import { cleanPageBody } from '#libs/facebook/bodyCleaner'
 import { detectEngagementStats } from '#libs/facebook/ollamaClient'
 import { openUrlInBrowser } from '#libs/facebook/playwrightRunner'
+// import logging from '#libs/logger'
 
 import type { TSocialScraperRequest, TSocialScraperResponse } from '#types/social-scraper'
 import type { PinoLogger } from 'hono-pino'
@@ -29,12 +30,13 @@ export class SocialScraperService {
     const { logger } = options ?? {}
     const snapshot = await openUrlInBrowser(profileUrl)
     const cleanedBody = cleanPageBody(snapshot.bodyHtml)
-
     let followers = 0
+    let comments: number | null = null
 
     try {
       const engagement = await detectEngagementStats(cleanedBody)
       followers = engagement.likes ?? 0
+      comments = engagement.comments ?? null
       logger?.info({ engagement, profileUrl }, 'ดึงข้อมูล engagement จากหน้าเพจสำเร็จ')
     } catch (error) {
       logger?.error({ error, profileUrl }, 'ไม่สามารถดึงข้อมูล engagement ได้ จะใช้ค่าเริ่มต้นแทน')
@@ -47,6 +49,7 @@ export class SocialScraperService {
       profileId: this.extractProfileId(snapshot.url) ?? 'unknown-profile',
       displayName: snapshot.title?.trim() || 'Facebook Profile',
       followers,
+      comments,
       scrapedAt: dayjs().toISOString(),
       samplePosts,
     }
@@ -68,7 +71,6 @@ export class SocialScraperService {
       .map((sentence) => sentence.trim())
       .filter(Boolean)
       .slice(0, 2)
-
     if (sentences.length === 0) {
       return [
         {

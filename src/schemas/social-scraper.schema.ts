@@ -33,6 +33,10 @@ export const socialScraperResponseSchema = z
       example: 15720,
       description: 'จำนวนผู้ติดตามที่พบจากการจำลอง',
     }),
+    comments: z.number().int().nonnegative().nullable().openapi({
+      example: 320,
+      description: 'จำนวนคอมเมนต์ที่ตรวจจับได้จากผลวิเคราะห์ ถ้าไม่พบให้เป็น null',
+    }),
     scrapedAt: z.string().openapi({
       example: '2025-10-30T14:15:00.000Z',
       description: 'เวลาที่รันการจำลอง (ISO 8601)',
@@ -61,7 +65,8 @@ export const socialScraperResponseSchema = z
           },
         ],
         description: 'รายการโพสต์ตัวอย่างที่ดึงมาได้',
-      }),
+      })
+      .optional(),
   })
   .openapi({
     description: 'ผลลัพธ์จำลองจากการสแครปโปรไฟล์โซเชียล',
