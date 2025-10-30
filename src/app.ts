@@ -4,6 +4,7 @@ import { secureHeaders } from 'hono/secure-headers'
 
 import { envVariables, factory } from '#factory'
 import healthRoute from '#features/health/health.routes'
+import socialScraperRoute from '#features/social-scraper/social-scraper.routes'
 import { errorHandler, notFoundHandler } from '#middlewares/error.middleware'
 import { pinoLogger } from '#middlewares/logger.middleware'
 import { registerDocs } from '#openapi/docs'
@@ -20,6 +21,7 @@ app.use(pinoLogger)
 app.use(secureHeaders())
 
 app.route('/health', healthRoute)
+app.route('/api/v1/social-scraper', socialScraperRoute)
 
 app.use(compress())
 

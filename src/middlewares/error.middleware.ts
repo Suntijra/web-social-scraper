@@ -3,13 +3,11 @@ import { HTTPException } from 'hono/http-exception'
 import ApplicationError from '#errors/application.error'
 import { HttpError } from '#errors/http.error'
 import ObjectNotFoundError from '#errors/object.not.found.error'
-import { envVariables } from '#factory'
 
 import type { Context, Env } from 'hono'
 
 export const errorHandler = async (err: Error | HTTPException, c: Context) => {
   const { logger } = c.var
-  if (envVariables.NODE_ENV === 'local') console.error(err)
   logger?.error(err)
   if (err instanceof HttpError) {
     return c.json(err.toJson(), err.statusCode)

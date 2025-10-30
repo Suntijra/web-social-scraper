@@ -18,4 +18,8 @@ export const TAG_DESCRIPTIONS: { name: string; description: string }[] = [
     name: ERouteTag.HEALTH,
     description: "You can read the health information of the API server to see if it's still operational.",
   },
+  {
+    name: ERouteTag.SOCIAL_SCRAPER,
+    description: 'เรียกใช้งาน API ตัวอย่างสำหรับจำลองการสแครปข้อมูลโซเชียลมีเดีย.',
+  },
 ]
