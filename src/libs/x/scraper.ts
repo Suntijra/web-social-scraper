@@ -17,6 +17,9 @@ interface XScrapeOptions {
   maxComments?: number
   headless?: boolean
   credentials?: Partial<XCredentials>
+  onMetadata?: (snapshot: XScrapeMetrics) => Promise<void> | void
+  onComment?: (comment: TSocialScraperComment) => Promise<void> | void
+  signal?: AbortSignal
 }
 
 interface XMainTweetData {
@@ -29,8 +32,7 @@ interface XMainTweetData {
   replyCount: number
 }
 
-interface XScrapeResult {
-  likes: number
+interface XScrapeMetrics {
   displayName: string
   title: string
   followers: number
@@ -40,6 +42,9 @@ interface XScrapeResult {
   view: number
   shares: number
   likes: number
+}
+
+interface XScrapeResult extends XScrapeMetrics {
   comments: TSocialScraperComment[]
 }
 
@@ -168,16 +173,29 @@ const collectMainTweetData = async (page: Page): Promise<XMainTweetData> => {
   }
 }
 
-const collectComments = async (page: Page, limit: number): Promise<TSocialScraperComment[]> => {
+const collectComments = async (
+  page: Page,
+  limit: number,
+  options?: {
+    onComment?: (comment: TSocialScraperComment) => Promise<void> | void
+    signal?: AbortSignal
+  }
+): Promise<TSocialScraperComment[]> => {
   const comments = new Map<string, TSocialScraperComment>()
   let scrollAttempts = 0
   const maxScrollAttempts = 10
   let lastSize = 0
 
-  while (comments.size < limit && scrollAttempts < maxScrollAttempts) {
+  const isAborted = (): boolean => Boolean(options?.signal?.aborted)
+
+  while (!isAborted() && comments.size < limit && scrollAttempts < maxScrollAttempts) {
     const commentArticles = await page.locator('article[data-testid="tweet"]').all()
     if (commentArticles.length > 1) {
       for (const commentElement of commentArticles.slice(1)) {
+        if (isAborted()) {
+          break
+        }
+
         try {
           const usernameLocator = commentElement.locator('div[data-testid="User-Name"] span:has-text("@")').first()
           const handle = ((await usernameLocator.textContent()) ?? '').trim()
@@ -192,10 +210,14 @@ const collectComments = async (page: Page, limit: number): Promise<TSocialScrape
 
           const key = `${authorName}:${text.substring(0, 32)}`
           if (!comments.has(key)) {
-            comments.set(key, {
+            const comment = {
               authorName,
               text,
-            })
+            }
+            comments.set(key, comment)
+            if (options?.onComment) {
+              await options.onComment(comment)
+            }
           }
 
           if (comments.size >= limit) {
@@ -215,6 +237,10 @@ const collectComments = async (page: Page, limit: number): Promise<TSocialScrape
     }
 
     if (comments.size >= limit || scrollAttempts >= maxScrollAttempts) {
+      break
+    }
+
+    if (isAborted()) {
       break
     }
 
@@ -248,6 +274,9 @@ export const scrapeXPost = async ({
   maxComments,
   headless,
   credentials,
+  onMetadata,
+  onComment,
+  signal,
 }: XScrapeOptions): Promise<XScrapeResult> => {
   if (!url) {
     throw new Error('URL is required for X scrape')
@@ -263,17 +292,12 @@ export const scrapeXPost = async ({
     const page = await context.newPage()
 
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-    await page.waitForTimeout(5_000)
+    await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined)
 
     await ensureAuthenticated(page)
 
     const mainTweetData = await collectMainTweetData(page)
-    const comments = await collectComments(
-      page,
-      maxComments ?? Math.min(mainTweetData.replyCount || DEFAULT_MAX_COMMENTS, DEFAULT_MAX_COMMENTS)
-    )
-
-    return {
+    const snapshot: XScrapeMetrics = {
       displayName: mainTweetData.displayName,
       title: mainTweetData.title,
       followers: 0,
@@ -283,6 +307,17 @@ export const scrapeXPost = async ({
       view: mainTweetData.viewCount,
       shares: 0,
       likes: mainTweetData.likeCount,
+    }
+    await onMetadata?.(snapshot)
+
+    const comments = await collectComments(
+      page,
+      maxComments ?? Math.min(mainTweetData.replyCount || DEFAULT_MAX_COMMENTS, DEFAULT_MAX_COMMENTS),
+      { onComment, signal }
+    )
+
+    return {
+      ...snapshot,
       comments,
     }
   } finally {

@@ -9,6 +9,9 @@ interface YouTubeScrapeOptions {
   maxComments?: number
   headless?: boolean
   logger?: PinoLogger
+  onMetadata?: (snapshot: YouTubeScrapeMetrics) => Promise<void> | void
+  onComment?: (comment: TSocialScraperComment) => Promise<void> | void
+  signal?: AbortSignal
 }
 
 interface YouTubeScrapeResult {
@@ -30,6 +33,18 @@ interface YouTubeMetadata {
   likeCount: number
   viewCount: number
   commentCount: number
+}
+
+interface YouTubeScrapeMetrics {
+  displayName: string
+  title: string
+  followers: number
+  commentsCount: number
+  bookmarks: number
+  reposts: number
+  view: number
+  shares: number
+  likes: number
 }
 
 const parseBoolean = (value: string | undefined, fallback: boolean): boolean => {
@@ -103,9 +118,22 @@ const collectVideoMetadata = async (page: Page, logger?: PinoLogger): Promise<Yo
   ]
 
   const likeCandidate = await page
-    .evaluate((selectors) => {
+    .evaluate<{ selector: string; text: string } | null, string[]>((selectors) => {
+      const doc = (
+        globalThis as typeof globalThis & {
+          document?: {
+            querySelector?: (
+              selector: string
+            ) => { textContent?: string | null; getAttribute?: (name: string) => string | null } | null
+          }
+        }
+      ).document
+      if (!doc?.querySelector) {
+        return null
+      }
+
       for (const selector of selectors) {
-        const node = document.querySelector(selector)
+        const node = doc.querySelector(selector)
         const text = node?.textContent?.trim()
         if (text) {
           return { selector, text }
@@ -113,9 +141,8 @@ const collectVideoMetadata = async (page: Page, logger?: PinoLogger): Promise<Yo
       }
 
       const button =
-        document.querySelector('#segmented-like-button button') ??
-        document.querySelector('#top-level-buttons-computed button')
-      const aria = button?.getAttribute('aria-label')?.trim()
+        doc.querySelector('#segmented-like-button button') ?? doc.querySelector('#top-level-buttons-computed button')
+      const aria = button?.getAttribute?.('aria-label')?.trim()
       if (aria) {
         return { selector: 'aria-label', text: aria }
       }
@@ -125,9 +152,9 @@ const collectVideoMetadata = async (page: Page, logger?: PinoLogger): Promise<Yo
     .catch(() => null)
 
   if (likeCandidate) {
-    console.log({ source: likeCandidate.selector, raw: likeCandidate.text }, 'youtube like raw text')
+    logger?.debug({ source: likeCandidate.selector, raw: likeCandidate.text }, 'youtube like raw text')
     likeCount = parseCountText(likeCandidate.text)
-    console.log({ source: likeCandidate.selector, parsed: likeCount }, 'youtube like candidate')
+    logger?.debug({ source: likeCandidate.selector, parsed: likeCount }, 'youtube like candidate')
   }
 
   if (likeCount === 0) {
@@ -144,19 +171,30 @@ const collectVideoMetadata = async (page: Page, logger?: PinoLogger): Promise<Yo
 
     if (directView) {
       const parsed = parseCountText(directView)
-      console.log({ source: 'direct', raw: directView, parsed }, 'youtube view candidate')
+      logger?.debug({ source: 'direct', raw: directView, parsed }, 'youtube view candidate')
       if (parsed > 0) {
         viewCount = parsed
       }
     }
 
     const ariaLabel = await page
-      .evaluate(() => document.querySelector('#view-count')?.ariaLabel ?? null)
+      .evaluate<string | null>(() => {
+        const doc = (
+          globalThis as typeof globalThis & {
+            document?: { querySelector?: (selector: string) => { ariaLabel?: string | null } | null }
+          }
+        ).document
+        const element = doc?.querySelector?.('#view-count')
+        if (typeof element?.ariaLabel === 'string') {
+          return element.ariaLabel
+        }
+        return null
+      })
       .catch(() => null)
     if (ariaLabel) {
-      console.log({ source: 'aria-eval', raw: ariaLabel }, 'youtube view ariaLabel raw')
+      logger?.debug({ source: 'aria-eval', raw: ariaLabel }, 'youtube view ariaLabel raw')
     } else {
-      console.log('youtube view ariaLabel raw not found via document.querySelector')
+      logger?.debug('youtube view ariaLabel raw not found via document.querySelector')
     }
 
     if (viewCount === 0) {
@@ -167,7 +205,7 @@ const collectVideoMetadata = async (page: Page, logger?: PinoLogger): Promise<Yo
         .catch(() => null)
       if (ariaView) {
         const parsed = parseCountText(ariaView)
-        console.log({ source: 'aria', raw: ariaView, parsed }, 'youtube view candidate')
+        logger?.debug({ source: 'aria', raw: ariaView, parsed }, 'youtube view candidate')
         if (parsed > 0) {
           viewCount = parsed
         }
@@ -192,7 +230,7 @@ const collectVideoMetadata = async (page: Page, logger?: PinoLogger): Promise<Yo
           continue
         }
         const parsed = parseCountText(text)
-        console.log({ source: selector, raw: text, parsed }, 'youtube view candidate')
+        logger?.debug({ source: selector, raw: text, parsed }, 'youtube view candidate')
         if (parsed > 0) {
           viewCount = parsed
           break
@@ -231,7 +269,14 @@ const collectVideoMetadata = async (page: Page, logger?: PinoLogger): Promise<Yo
   return { title, channelName, likeCount, viewCount, commentCount }
 }
 
-const collectComments = async (page: Page, limit: number): Promise<TSocialScraperComment[]> => {
+const collectComments = async (
+  page: Page,
+  limit: number,
+  options?: {
+    onComment?: (comment: TSocialScraperComment) => Promise<void> | void
+    signal?: AbortSignal
+  }
+): Promise<TSocialScraperComment[]> => {
   const comments = new Map<string, TSocialScraperComment>()
   let scrollAttempts = 0
   const maxScrollAttempts = 15
@@ -244,10 +289,16 @@ const collectComments = async (page: Page, limit: number): Promise<TSocialScrape
     .catch(() => undefined)
   await page.waitForTimeout(3_000)
 
-  while ((limit <= 0 || comments.size < limit) && scrollAttempts < maxScrollAttempts) {
+  const isAborted = (): boolean => Boolean(options?.signal?.aborted)
+
+  while (!isAborted() && (limit <= 0 || comments.size < limit) && scrollAttempts < maxScrollAttempts) {
     const commentElements = await page.locator('ytd-comment-thread-renderer #comment-container').all()
 
     for (const element of commentElements) {
+      if (isAborted()) {
+        break
+      }
+
       try {
         const username = ((await element.locator('#author-text span').first().textContent()) ?? '').trim()
         const text = ((await element.locator('yt-attributed-string#content-text').textContent()) ?? '').trim()
@@ -258,10 +309,14 @@ const collectComments = async (page: Page, limit: number): Promise<TSocialScrape
 
         const key = `${username}:${text.substring(0, 48)}`
         if (!comments.has(key)) {
-          comments.set(key, {
+          const comment = {
             authorName: username,
             text,
-          })
+          }
+          comments.set(key, comment)
+          if (options?.onComment) {
+            await options.onComment(comment)
+          }
         }
 
         if (limit > 0 && comments.size >= limit) {
@@ -273,6 +328,10 @@ const collectComments = async (page: Page, limit: number): Promise<TSocialScrape
     }
 
     if (limit > 0 && comments.size >= limit) {
+      break
+    }
+
+    if (isAborted()) {
       break
     }
 
@@ -299,6 +358,9 @@ export const scrapeYouTubeVideo = async ({
   maxComments = 20,
   headless,
   logger,
+  onMetadata,
+  onComment,
+  signal,
 }: YouTubeScrapeOptions): Promise<YouTubeScrapeResult> => {
   if (!url) {
     throw new Error('URL is required for YouTube scrape')
@@ -311,12 +373,10 @@ export const scrapeYouTubeVideo = async ({
   try {
     const page = await context.newPage()
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-    await page.waitForTimeout(7_000)
+    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined)
 
     const metadata = await collectVideoMetadata(page, logger)
-    const comments = await collectComments(page, maxComments)
-
-    return {
+    const snapshot: YouTubeScrapeMetrics = {
       displayName: metadata.channelName,
       title: metadata.title,
       followers: 0,
@@ -326,6 +386,16 @@ export const scrapeYouTubeVideo = async ({
       view: metadata.viewCount,
       shares: 0,
       likes: metadata.likeCount,
+    }
+    await onMetadata?.(snapshot)
+
+    const comments = await collectComments(page, maxComments, {
+      onComment,
+      signal,
+    })
+
+    return {
+      ...snapshot,
       comments,
     }
   } finally {

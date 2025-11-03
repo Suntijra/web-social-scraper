@@ -10,6 +10,9 @@ interface TikTokScrapeOptions {
   storageStatePath?: string
   headless?: boolean
   maxComments?: number
+  onMetadata?: (snapshot: TikTokScrapeMetrics) => Promise<void> | void
+  onComment?: (comment: TSocialScraperComment) => Promise<void> | void
+  signal?: AbortSignal
 }
 
 interface TikTokScrapeResult {
@@ -23,6 +26,18 @@ interface TikTokScrapeResult {
   shares: number
   likes: number
   comments: TSocialScraperComment[]
+}
+
+interface TikTokScrapeMetrics {
+  displayName: string
+  title: string
+  followers: number
+  commentsCount: number
+  bookmarks: number
+  reposts: number
+  view: number
+  shares: number
+  likes: number
 }
 
 type TikTokStorageState = Awaited<ReturnType<BrowserContext['storageState']>>
@@ -97,12 +112,25 @@ const handlePopups = async (page: Page): Promise<void> => {
   }
 }
 
-const collectComments = async (page: Page, limit: number): Promise<TSocialScraperComment[]> => {
+const collectComments = async (
+  page: Page,
+  limit: number,
+  options?: {
+    onComment?: (comment: TSocialScraperComment) => Promise<void> | void
+    signal?: AbortSignal
+  }
+): Promise<TSocialScraperComment[]> => {
   const comments: TSocialScraperComment[] = []
   const commentItems = await page.locator('div[data-e2e="comment-item"]')
   const total = await commentItems.count()
 
+  const isAborted = (): boolean => Boolean(options?.signal?.aborted)
+
   for (let index = 0; index < total; index += 1) {
+    if (isAborted()) {
+      break
+    }
+
     if (limit > 0 && comments.length >= limit) {
       break
     }
@@ -117,10 +145,14 @@ const collectComments = async (page: Page, limit: number): Promise<TSocialScrape
         continue
       }
 
-      comments.push({
+      const comment = {
         authorName,
         text,
-      })
+      }
+      comments.push(comment)
+      if (options?.onComment) {
+        await options.onComment(comment)
+      }
     } catch {
       continue
     }
@@ -134,6 +166,9 @@ export const scrapeTiktokVideo = async ({
   storageStatePath,
   headless,
   maxComments = 20,
+  onMetadata,
+  onComment,
+  signal,
 }: TikTokScrapeOptions): Promise<TikTokScrapeResult> => {
   if (!url) {
     throw new Error('URL is required for TikTok scrape')
@@ -149,7 +184,7 @@ export const scrapeTiktokVideo = async ({
     const page = await context.newPage()
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 })
     await handlePopups(page)
-    await page.waitForTimeout(3_000)
+    await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined)
 
     const displayName = (
       (await page.locator('a[data-e2e="user-name"], span[data-e2e="user-name"]').first().textContent()) ?? ''
@@ -178,9 +213,7 @@ export const scrapeTiktokVideo = async ({
       viewCount = parseCountText(viewText ?? undefined)
     }
 
-    const comments = await collectComments(page, maxComments)
-
-    return {
+    const snapshot: TikTokScrapeMetrics = {
       displayName,
       title,
       followers: 0,
@@ -190,6 +223,13 @@ export const scrapeTiktokVideo = async ({
       view: viewCount,
       shares: shareCount,
       likes: likeCount,
+    }
+    await onMetadata?.(snapshot)
+
+    const comments = await collectComments(page, maxComments, { onComment, signal })
+
+    return {
+      ...snapshot,
       comments,
     }
   } finally {

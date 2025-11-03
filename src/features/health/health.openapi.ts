@@ -12,9 +12,9 @@ export const getHealthDoc = describeRoute({
   security: [],
   responses: {
     200: {
-      description: HTTP_ERROR_DESCRIPTIONS[200],
+      description: HTTP_ERROR_DESCRIPTIONS[200] ?? 'Request successful.',
       content: {
-        'application/json': { schema: resolver(healthResponseSchema) },
+        'application/json': { schema: resolver(healthResponseSchema) as never },
       },
     },
   },

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <title>SSE Social Scraper Demo</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 2rem;
+        background: #f6f8fa;
+        color: #1f2328;
+      }
+      h1 {
+        margin-bottom: 0.5rem;
+      }
+      form {
+        display: grid;
+        gap: 0.75rem;
+        max-width: 640px;
+        background: #fff;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 0 0 1px rgba(31, 35, 40, 0.08), 0 8px 24px rgba(31, 35, 40, 0.12);
+      }
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        font-weight: 600;
+      }
+      input,
+      select {
+        font: inherit;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid #d0d7de;
+        border-radius: 0.375rem;
+        background: #fff;
+      }
+      button {
+        font: inherit;
+        font-weight: 600;
+        padding: 0.7rem;
+        background: #0969da;
+        color: #fff;
+        border: none;
+        border-radius: 0.375rem;
+        cursor: pointer;
+      }
+      button[disabled] {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      pre {
+        background: #0d1117;
+        color: #f0f6fc;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        overflow: auto;
+        max-height: 60vh;
+      }
+      .status-bar {
+        margin-top: 1rem;
+        font-size: 0.95rem;
+      }
+      .status-bar span {
+        display: inline-block;
+        margin-right: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>SSE ทดสอบ Social Scraper</h1>
+    <p>
+      ฟอร์มนี้จะเปิดการเชื่อมต่อ <code>EventSource</code> ไปที่
+      <code>/api/v1/social-scraper/stream</code> แล้วแสดงอีเวนต์ <code>metrics</code>,
+      <code>comment</code>, และ <code>complete</code> ทันทีที่ได้รับ
+    </p>
+
+    <form id="sse-form">
+      <label>
+        Platform
+        <select id="platform" required>
+          <option value="youtube">youtube</option>
+          <option value="facebook">facebook</option>
+          <option value="x">x</option>
+          <option value="tiktok">tiktok</option>
+        </select>
+      </label>
+      <label>
+        Profile URL
+        <input
+          id="profileUrl"
+          type="url"
+          required
+          placeholder="https://www.youtube.com/watch?v=WNS9eMMQyOA"
+        />
+      </label>
+      <label>
+        API Origin
+        <input id="origin" type="url" value="https://localhost:8000" required />
+      </label>
+      <button type="submit">เริ่มสตรีม</button>
+      <button type="button" id="stopBtn" disabled>หยุด</button>
+    </form>
+
+    <div class="status-bar" id="statusBar">
+      <span>สถานะ: <strong id="statusText">ว่าง</strong></span>
+      <span>Metrics: <strong id="metricsCount">0</strong></span>
+      <span>Comments: <strong id="commentsCount">0</strong></span>
+    </div>
+
+    <pre id="log">พร้อมเชื่อมต่อ...</pre>
+
+    <script>
+      const form = document.getElementById('sse-form')
+      const stopBtn = document.getElementById('stopBtn')
+      const log = document.getElementById('log')
+      const statusText = document.getElementById('statusText')
+      const metricsCount = document.getElementById('metricsCount')
+      const commentsCount = document.getElementById('commentsCount')
+
+      /** @type {EventSource | null} */
+      let source = null
+
+      const appendLog = (label, payload) => {
+        const timestamp = new Date().toLocaleTimeString()
+        log.textContent += `\n[${timestamp}] ${label}\n${JSON.stringify(payload, null, 2)}\n`
+        log.scrollTop = log.scrollHeight
+      }
+
+      const setStatus = (text) => {
+        statusText.textContent = text
+      }
+
+      const closeSource = () => {
+        if (source) {
+          source.close()
+          source = null
+        }
+        stopBtn.disabled = true
+        form.querySelector('button[type="submit"]').disabled = false
+        setStatus('ว่าง')
+      }
+
+      stopBtn.addEventListener('click', () => {
+        appendLog('manual-stop', {})
+        closeSource()
+      })
+
+      form.addEventListener('submit', (event) => {
+        event.preventDefault()
+
+        if (source) {
+          source.close()
+        }
+
+        const platform = document.getElementById('platform').value
+        const profileUrl = document.getElementById('profileUrl').value.trim()
+        const origin = document.getElementById('origin').value.trim().replace(/\/+$/, '')
+
+        if (!profileUrl || !origin) {
+          return
+        }
+
+        const streamUrl = `${origin}/api/v1/social-scraper/stream?platform=${encodeURIComponent(
+          platform
+        )}&profileUrl=${encodeURIComponent(profileUrl)}`
+
+        log.textContent = `เปิดการเชื่อมต่อไปยัง ${streamUrl}\n`
+        setStatus('กำลังเชื่อมต่อ…')
+        metricsCount.textContent = '0'
+        commentsCount.textContent = '0'
+        stopBtn.disabled = false
+        form.querySelector('button[type="submit"]').disabled = true
+
+        source = new EventSource(streamUrl, { withCredentials: false })
+
+        source.addEventListener('open', () => {
+          setStatus('เชื่อมต่อแล้ว')
+          appendLog('open', {})
+        })
+
+        source.addEventListener('metrics', (event) => {
+          metricsCount.textContent = String(Number(metricsCount.textContent) + 1)
+          appendLog('metrics', JSON.parse(event.data))
+        })
+
+        source.addEventListener('comment', (event) => {
+          commentsCount.textContent = String(Number(commentsCount.textContent) + 1)
+          appendLog('comment', JSON.parse(event.data))
+        })
+
+        source.addEventListener('complete', (event) => {
+          appendLog('complete', JSON.parse(event.data))
+          setStatus('เสร็จสิ้น')
+          closeSource()
+        })
+
+        source.addEventListener('error', (event) => {
+          appendLog('error', { message: 'เชื่อมต่อผิดพลาด', event })
+          setStatus('ผิดพลาด')
+          closeSource()
+        })
+      })
+    </script>
+  </body>
+</html>
