@@ -5,7 +5,7 @@ import type { Context } from 'hono'
 
 export class SocialScraperController {
   async simulateScrape(c: Context) {
-    const payload = c.req.valid('json') as TSocialScraperRequest
+    const payload = c.req.valid('json' as never) as TSocialScraperRequest
 
     try {
       const response = await socialScraperService.simulate(payload, { logger: c.var.logger })

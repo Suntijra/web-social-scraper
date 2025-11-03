@@ -5,24 +5,24 @@ import { socialScraperRequestSchema, socialScraperResponseSchema } from '#schema
 import { ERouteTag } from '#types/openapi.d'
 
 export const postSocialScraperSimulateDoc = describeRoute({
-  summary: 'จำลองผลลัพธ์การสแครปโปรไฟล์โซเชียล',
+  summary: 'ดึงข้อมูลโซเชียลจากหลายแพลตฟอร์ม',
   description:
-    'สำหรับแพลตฟอร์ม Facebook: เปิดหน้าเว็บจริงด้วย Playwright, ทำความสะอาดเนื้อหาด้วย bodyCleaner และวิเคราะห์ engagement ผ่าน Ollama ก่อนส่งกลับเป็นผลลัพธ์ตัวอย่าง',
+    'รองรับ Facebook, X (Twitter), TikTok และ YouTube โดยใช้ Playwright/LLM สกัดเมตริกหลัก เช่น followers, comments, reactions พร้อมตัวอย่างคอมเมนต์ (ถ้ามี)',
   tags: [ERouteTag.SOCIAL_SCRAPER],
   requestBody: {
     required: true,
     content: {
       'application/json': {
-        schema: resolver(socialScraperRequestSchema),
+        schema: resolver(socialScraperRequestSchema) as never,
       },
     },
   },
   responses: {
     200: {
-      description: HTTP_ERROR_DESCRIPTIONS[200],
+      description: HTTP_ERROR_DESCRIPTIONS[200] ?? 'Request successful.',
       content: {
         'application/json': {
-          schema: resolver(socialScraperResponseSchema),
+          schema: resolver(socialScraperResponseSchema) as never,
         },
       },
     },

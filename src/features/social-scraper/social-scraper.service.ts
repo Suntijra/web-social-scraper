@@ -4,9 +4,11 @@ import InvalidParameterError from '#errors/invalid.parameter.error'
 import { cleanPageBody } from '#libs/facebook/bodyCleaner'
 import { detectEngagementStats } from '#libs/facebook/ollamaClient'
 import { openUrlInBrowser } from '#libs/facebook/playwrightRunner'
-// import logging from '#libs/logger'
+import { scrapeTiktokVideo } from '#libs/tiktok/scraper'
+import { scrapeXPost } from '#libs/x/scraper'
+import { scrapeYouTubeVideo } from '#libs/youtube/scraper'
 
-import type { TSocialScraperRequest, TSocialScraperResponse } from '#types/social-scraper'
+import type { TSocialScraperComment, TSocialScraperRequest, TSocialScraperResponse } from '#types/social-scraper'
 import type { PinoLogger } from 'hono-pino'
 
 interface SimulateOptions {
@@ -18,6 +20,12 @@ export class SocialScraperService {
     switch (payload.platform) {
       case 'facebook':
         return this.simulateFacebook(payload, options)
+      case 'x':
+        return this.simulateX(payload)
+      case 'youtube':
+        return this.simulateYouTube(payload, options)
+      case 'tiktok':
+        return this.simulateTiktok(payload)
       default:
         throw new InvalidParameterError(`แพลตฟอร์ม ${payload.platform} ยังไม่รองรับในตัวอย่างนี้`)
     }
@@ -31,68 +39,121 @@ export class SocialScraperService {
     const snapshot = await openUrlInBrowser(profileUrl)
     const cleanedBody = cleanPageBody(snapshot.bodyHtml)
     let followers = 0
-    let comments: number | null = null
+    let commentsCount = 0
+    let reposts = 0
+    let likes = 0
 
     try {
       const engagement = await detectEngagementStats(cleanedBody)
       followers = engagement.likes ?? 0
-      comments = engagement.comments ?? null
+      likes = engagement.likes ?? 0
+      commentsCount = engagement.comments ?? 0
+      reposts = engagement.shares ?? 0
       logger?.info({ engagement, profileUrl }, 'ดึงข้อมูล engagement จากหน้าเพจสำเร็จ')
     } catch (error) {
       logger?.error({ error, profileUrl }, 'ไม่สามารถดึงข้อมูล engagement ได้ จะใช้ค่าเริ่มต้นแทน')
     }
 
-    const samplePosts = this.buildSamplePosts(cleanedBody)
-
-    return {
-      platform: 'facebook',
-      profileId: this.extractProfileId(snapshot.url) ?? 'unknown-profile',
-      displayName: snapshot.title?.trim() || 'Facebook Profile',
+    const metrics = {
+      displayName: snapshot.title?.trim() ?? '',
+      title: this.deriveTitleFromBody(cleanedBody, snapshot.title ?? ''),
       followers,
-      comments,
-      scrapedAt: dayjs().toISOString(),
-      samplePosts,
+      commentsCount,
+      bookmarks: 0,
+      reposts,
+      view: 0,
+      likes,
+      comments: [] as TSocialScraperComment[],
     }
+
+    return this.toResponse('facebook', metrics)
   }
 
-  private extractProfileId(targetUrl: string): string | null {
-    try {
-      const { pathname } = new URL(targetUrl)
-      const segments = pathname.split('/').filter(Boolean)
-      return segments.pop() ?? null
-    } catch {
-      return null
-    }
-  }
-
-  private buildSamplePosts(cleanedBody: string): TSocialScraperResponse['samplePosts'] {
-    const sentences = cleanedBody
-      .split(/[.!?]\s+/u)
-      .map((sentence) => sentence.trim())
-      .filter(Boolean)
-      .slice(0, 2)
-    if (sentences.length === 0) {
-      return [
-        {
-          id: 'sample-post-1',
-          headline: 'ไม่พบเนื้อหาโพสต์ที่สามารถแสดงได้จากเพจนี้',
-          publishedAt: dayjs().subtract(1, 'day').toISOString(),
-        },
-      ]
-    }
-
-    return sentences.map((sentence, index) => {
-      const headline = sentence.length > 120 ? `${sentence.slice(0, 117)}...` : sentence
-      const publishedAt = dayjs()
-        .subtract(index === 0 ? 1 : 7, 'day')
-        .toISOString()
-
-      return {
-        id: `sample-post-${index + 1}`,
-        headline,
-        publishedAt,
-      }
+  private async simulateX({ profileUrl }: TSocialScraperRequest): Promise<TSocialScraperResponse> {
+    const result = await scrapeXPost({ url: profileUrl })
+    return this.toResponse('x', {
+      displayName: result.displayName,
+      title: result.title,
+      followers: result.followers,
+      commentsCount: result.commentsCount,
+      bookmarks: result.bookmarks,
+      reposts: result.reposts,
+      view: result.view,
+      likes: result.likes,
+      comments: result.comments,
     })
+  }
+
+  private async simulateYouTube(
+    { profileUrl }: TSocialScraperRequest,
+    options?: SimulateOptions
+  ): Promise<TSocialScraperResponse> {
+    const result = await scrapeYouTubeVideo({ url: profileUrl, logger: options?.logger })
+    return this.toResponse('youtube', {
+      displayName: result.displayName,
+      title: result.title,
+      followers: result.followers,
+      commentsCount: result.commentsCount,
+      bookmarks: result.bookmarks,
+      reposts: result.reposts,
+      view: result.view,
+      likes: result.likes,
+      comments: result.comments,
+    })
+  }
+
+  private async simulateTiktok({ profileUrl }: TSocialScraperRequest): Promise<TSocialScraperResponse> {
+    const result = await scrapeTiktokVideo({ url: profileUrl })
+    return this.toResponse('tiktok', {
+      displayName: result.displayName,
+      title: result.title,
+      followers: result.followers,
+      commentsCount: result.commentsCount,
+      bookmarks: result.bookmarks,
+      reposts: result.reposts,
+      view: result.view,
+      likes: result.likes,
+      comments: result.comments,
+    })
+  }
+
+  private toResponse(
+    platform: TSocialScraperRequest['platform'],
+    metrics: {
+      displayName: string
+      title: string
+      followers: number
+      commentsCount: number
+      bookmarks: number
+      reposts: number
+      view: number
+      likes: number
+      comments: TSocialScraperComment[]
+    }
+  ): TSocialScraperResponse {
+    return {
+      platform,
+      displayName: metrics.displayName,
+      title: metrics.title,
+      followers: metrics.followers,
+      comments_count: metrics.commentsCount,
+      bookmarks: metrics.bookmarks,
+      reposts: metrics.reposts,
+      view: metrics.view,
+      likes: metrics.likes,
+      comments: metrics.comments,
+      scrapedAt: dayjs().toISOString(),
+    }
+  }
+
+  private deriveTitleFromBody(cleanedBody: string, fallback: string): string {
+    const segments = cleanedBody
+      .split(/\s{2,}|\n/u)
+      .map((segment) => segment.trim())
+      .filter(Boolean)
+
+    const candidate = segments.length > 0 ? (segments[0] ?? fallback) : fallback
+    return candidate.trim().slice(0, 140)
   }
 }
 

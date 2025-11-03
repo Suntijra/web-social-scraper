@@ -1,6 +1,6 @@
 import { z } from '@hono/zod-openapi'
 
-const PLATFORM_VALUES = ['facebook', 'instagram', 'tiktok'] as const
+const PLATFORM_VALUES = ['facebook', 'x', 'tiktok', 'youtube'] as const
 
 export const socialScraperRequestSchema = z
   .object({
@@ -17,57 +17,69 @@ export const socialScraperRequestSchema = z
     description: 'ข้อมูลที่จำเป็นสำหรับจำลองการสแครปโซเชียล',
   })
 
+export const socialScraperCommentSchema = z.object({
+  authorName: z.string().default(''),
+  text: z.string().default(''),
+})
+
 export const socialScraperResponseSchema = z
   .object({
     platform: z.enum(PLATFORM_VALUES).openapi({
       example: 'facebook',
     }),
-    profileId: z.string().openapi({
-      example: 'acme-1234',
-      description: 'รหัสภายในที่ระบุโปรไฟล์นั้น',
+    displayName: z.string().default('').openapi({
+      example: 'เมื่อมากุโระ ท้าชน แซลมอน... - Sushiro Thailand | Facebook',
+      description: 'ชื่อเพจหรือช่องที่เกี่ยวข้องกับคอนเทนต์',
     }),
-    displayName: z.string().openapi({
-      example: 'ACME Inc.',
+    title: z.string().default('').openapi({
+      example: 'หัวข้อของโพสต์',
+      description: 'หัวข้อหลักของคอนเทนต์ เช่น ชื่อโพสต์ ชื่อวิดีโอ',
     }),
-    followers: z.number().int().nonnegative().openapi({
-      example: 15720,
-      description: 'จำนวนผู้ติดตามที่พบจากการจำลอง',
+    followers: z.number().int().nonnegative().default(0).openapi({
+      example: 1900,
+      description: 'จำนวนผู้ติดตามหรือสมาชิกของเพจ/ช่อง',
     }),
-    comments: z.number().int().nonnegative().nullable().openapi({
-      example: 320,
-      description: 'จำนวนคอมเมนต์ที่ตรวจจับได้จากผลวิเคราะห์ ถ้าไม่พบให้เป็น null',
+    comments_count: z.number().int().nonnegative().default(0).openapi({
+      example: 642,
+      description: 'ยอดรวมคอมเมนต์ที่ตรวจพบ',
     }),
-    scrapedAt: z.string().openapi({
-      example: '2025-10-30T14:15:00.000Z',
-      description: 'เวลาที่รันการจำลอง (ISO 8601)',
+    bookmarks: z.number().int().nonnegative().default(0).openapi({
+      example: 0,
+      description: 'จำนวนบันทึก/บุ๊กมาร์ก หากแพลตฟอร์มไม่รองรับให้เป็น 0',
     }),
-    samplePosts: z
-      .array(
-        z.object({
-          id: z.string().openapi({
-            example: 'post-1',
-          }),
-          headline: z.string().openapi({
-            example: 'เปิดตัวสินค้ารุ่นใหม่ประจำไตรมาส',
-          }),
-          publishedAt: z.string().openapi({
-            example: '2025-10-01T08:00:00.000Z',
-          }),
-        })
-      )
-      .min(1)
+    reposts: z.number().int().nonnegative().default(0).openapi({
+      example: 0,
+      description: 'จำนวนแชร์หรือรีโพสต์ หากแพลตฟอร์มไม่รองรับให้เป็น 0',
+    }),
+    view: z.number().int().nonnegative().default(0).openapi({
+      example: 0,
+      description: 'จำนวนการรับชมคอนเทนต์ หากแพลตฟอร์มไม่รองรับให้เป็น 0',
+    }),
+    shares: z.number().int().nonnegative().default(0).openapi({
+      example: 120,
+      description: 'จำนวนการแชร์ หากแพลตฟอร์มไม่รองรับให้เป็น 0',
+    }),
+    likes: z.number().int().nonnegative().default(0).openapi({
+      example: 15_000,
+      description: 'จำนวนกดถูกใจ/รีแอคชัน หากแพลตฟอร์มไม่รองรับให้เป็น 0',
+    }),
+    comments: z
+      .array(socialScraperCommentSchema)
+      .default([])
       .openapi({
+        description: 'รายการคอมเมนต์ที่ดึงมาได้ (จำกัดจำนวนตามการตั้งค่า)',
         example: [
           {
-            id: 'post-1',
-            headline: 'เปิดตัวสินค้ารุ่นใหม่ประจำไตรมาส',
-            publishedAt: '2025-10-01T08:00:00.000Z',
+            authorName: 'Nattapong Srisuk',
+            text: 'รอโปรดีๆอยู่นะครับ',
           },
         ],
-        description: 'รายการโพสต์ตัวอย่างที่ดึงมาได้',
-      })
-      .optional(),
+      }),
+    scrapedAt: z.string().openapi({
+      example: '2025-10-31T06:56:33.140Z',
+      description: 'เวลาที่ระบบสกัดข้อมูล (ISO 8601)',
+    }),
   })
   .openapi({
-    description: 'ผลลัพธ์จำลองจากการสแครปโปรไฟล์โซเชียล',
+    description: 'ผลลัพธ์จากการสแครปคอนเทนต์โซเชียลแบบรวมหลายแพลตฟอร์ม',
   })
