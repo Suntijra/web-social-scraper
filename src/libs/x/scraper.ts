@@ -62,17 +62,29 @@ const parseCountText = (text: string): number => {
   if (!sanitized) {
     return 0
   }
-  if (/k$/i.test(sanitized)) {
-    return Math.floor(Number.parseFloat(sanitized.replace(/k$/i, '')) * 1_000)
+
+  const match = sanitized.match(/([\d.]+)\s*([kmb])?/i)
+  if (!match) {
+    return 0
   }
-  if (/m$/i.test(sanitized)) {
-    return Math.floor(Number.parseFloat(sanitized.replace(/m$/i, '')) * 1_000_000)
+
+  const baseValue = Number.parseFloat(match[1] ?? '0')
+  if (Number.isNaN(baseValue)) {
+    return 0
   }
-  if (/b$/i.test(sanitized)) {
-    return Math.floor(Number.parseFloat(sanitized.replace(/b$/i, '')) * 1_000_000_000)
+
+  const suffix = (match[2] ?? '').toLowerCase()
+  if (suffix === 'k') {
+    return Math.floor(baseValue * 1_000)
   }
-  const numeric = sanitized.match(/\d+/)
-  return numeric ? Number.parseInt(numeric[0] ?? '0', 10) : 0
+  if (suffix === 'm') {
+    return Math.floor(baseValue * 1_000_000)
+  }
+  if (suffix === 'b') {
+    return Math.floor(baseValue * 1_000_000_000)
+  }
+
+  return Math.floor(baseValue)
 }
 
 const resolveCredentials = (credentials?: Partial<XCredentials>): XCredentials => {
@@ -144,8 +156,13 @@ const collectMainTweetData = async (page: Page): Promise<XMainTweetData> => {
 
   let viewCount = 0
   try {
-    const viewsContainer = page.locator('a[href*="/analytics"]').first()
-    const viewCountText = (await viewsContainer.textContent()) ?? '0'
+    const viewCountText =
+      (await page
+        .locator(
+          '#react-root > div > div > div.css-175oi2r.r-1f2l425.r-13qz1uu.r-417010.r-18u37iz > main > div > div > div > div > div > section > div > div > div:nth-child(1) > div > div > article > div > div > div:nth-child(3) > div.css-175oi2r.r-12kyg2d > div > div.css-175oi2r.r-1wbh5a2.r-1a11zyx > div > div:nth-child(3) > span > div > span > span > span'
+        )
+        .first()
+        .textContent()) ?? '0'
     viewCount = parseCountText(viewCountText)
   } catch {
     viewCount = 0
@@ -185,6 +202,8 @@ const collectComments = async (
   let scrollAttempts = 0
   const maxScrollAttempts = Number.isFinite(limit) ? Math.max(10, Math.ceil(limit / 5)) : 30
   let lastSize = 0
+  const idleTimeoutMs = 60_000
+  let lastNewCommentTimestamp = Date.now()
 
   const isAborted = (): boolean => Boolean(options?.signal?.aborted)
 
@@ -215,6 +234,7 @@ const collectComments = async (
               text,
             }
             comments.set(key, comment)
+            lastNewCommentTimestamp = Date.now()
             if (options?.onComment) {
               await options.onComment(comment)
             }
@@ -241,6 +261,10 @@ const collectComments = async (
     }
 
     if (isAborted()) {
+      break
+    }
+
+    if (Date.now() - lastNewCommentTimestamp >= idleTimeoutMs) {
       break
     }
 
