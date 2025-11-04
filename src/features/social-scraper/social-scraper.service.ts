@@ -72,7 +72,6 @@ export class SocialScraperService {
     const { logger } = options ?? {}
     const snapshot = await openUrlInBrowser(profileUrl)
     const cleanedBody = cleanPageBody(snapshot.bodyHtml)
-    let followers = 0
     let commentsCount = 0
     let reposts = 0
     let likes = 0
@@ -80,7 +79,6 @@ export class SocialScraperService {
 
     try {
       const engagement = await detectEngagementStats(cleanedBody)
-      followers = engagement.likes ?? 0
       likes = engagement.likes ?? 0
       commentsCount = engagement.comments ?? 0
       reposts = engagement.shares ?? 0
@@ -93,7 +91,7 @@ export class SocialScraperService {
     const metrics = {
       displayName: snapshot.title?.trim() ?? '',
       title: this.deriveTitleFromBody(cleanedBody, snapshot.title ?? ''),
-      followers,
+      followers: 0,
       commentsCount,
       bookmarks: 0,
       reposts,
@@ -457,8 +455,7 @@ export class SocialScraperService {
     const { comments: _comments, ...rest } = response
     await this.safeEmit(emitter, 'complete', {
       ...rest,
-      comments_count: rest.comments_count,
-      total_comments_streamed: comments.length,
+      comments_count: comments.length,
     })
   }
 

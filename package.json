@@ -10,7 +10,8 @@
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"**/*.{ts,json,md}\"",
     "check-format": "prettier --check \"**/*.{ts,json,md}\"",
-    "prepare": "husky"
+    "prepare": "husky",
+    "build": "bun build src/server.ts --minify --target bun --outdir dist --external electron --external 'chromium-bidi/*' --external playwright"
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",
