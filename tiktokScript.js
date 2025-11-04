@@ -109,9 +109,7 @@ const main = async () => {
   } else {
     browser = await chromium.launch(launchOptions)
     const contextOptions =
-      STORAGE_STATE_PATH && fs.existsSync(STORAGE_STATE_PATH)
-        ? { storageState: STORAGE_STATE_PATH }
-        : undefined
+      STORAGE_STATE_PATH && fs.existsSync(STORAGE_STATE_PATH) ? { storageState: STORAGE_STATE_PATH } : undefined
     context = await browser.newContext(contextOptions)
     page = await context.newPage()
   }

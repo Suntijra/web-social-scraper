@@ -183,7 +183,7 @@ const collectComments = async (
 ): Promise<TSocialScraperComment[]> => {
   const comments = new Map<string, TSocialScraperComment>()
   let scrollAttempts = 0
-  const maxScrollAttempts = 10
+  const maxScrollAttempts = Number.isFinite(limit) ? Math.max(10, Math.ceil(limit / 5)) : 30
   let lastSize = 0
 
   const isAborted = (): boolean => Boolean(options?.signal?.aborted)
@@ -310,11 +310,10 @@ export const scrapeXPost = async ({
     }
     await onMetadata?.(snapshot)
 
-    const comments = await collectComments(
-      page,
-      maxComments ?? Math.min(mainTweetData.replyCount || DEFAULT_MAX_COMMENTS, DEFAULT_MAX_COMMENTS),
-      { onComment, signal }
-    )
+    const hasReplyCount = typeof mainTweetData.replyCount === 'number' && mainTweetData.replyCount > 0
+    const inferredCommentTarget = maxComments ?? (hasReplyCount ? mainTweetData.replyCount : DEFAULT_MAX_COMMENTS)
+
+    const comments = await collectComments(page, inferredCommentTarget, { onComment, signal })
 
     return {
       ...snapshot,
