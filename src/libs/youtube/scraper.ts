@@ -1,51 +1,9 @@
 import { chromium } from 'playwright'
 
 import type { TSocialScraperComment } from '#types/social-scraper'
+import type { YouTubeMetadata, YouTubeScrapeMetrics, YouTubeScrapeOptions, YouTubeScrapeResult } from '#types/youtube'
 import type { PinoLogger } from 'hono-pino'
 import type { Browser, BrowserContext, Page } from 'playwright'
-
-interface YouTubeScrapeOptions {
-  url: string
-  maxComments?: number
-  headless?: boolean
-  logger?: PinoLogger
-  onMetadata?: (snapshot: YouTubeScrapeMetrics) => Promise<void> | void
-  onComment?: (comment: TSocialScraperComment) => Promise<void> | void
-  signal?: AbortSignal
-}
-
-interface YouTubeScrapeResult {
-  displayName: string
-  title: string
-  followers: number
-  commentsCount: number
-  bookmarks: number
-  reposts: number
-  view: number
-  shares: number
-  likes: number
-  comments: TSocialScraperComment[]
-}
-
-interface YouTubeMetadata {
-  title: string
-  channelName: string
-  likeCount: number
-  viewCount: number
-  commentCount: number
-}
-
-interface YouTubeScrapeMetrics {
-  displayName: string
-  title: string
-  followers: number
-  commentsCount: number
-  bookmarks: number
-  reposts: number
-  view: number
-  shares: number
-  likes: number
-}
 
 const UNBOUNDED_COMMENT_LIMIT = Number.POSITIVE_INFINITY
 

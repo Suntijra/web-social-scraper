@@ -1,40 +1,6 @@
 import { chromium, type Page } from 'playwright'
 
-import type { TSocialScraperComment } from '#types/social-scraper'
-
-interface TikTokScrapeOptions {
-  url: string
-  headless?: boolean
-  browserChannel?: string
-  signal?: AbortSignal
-  onMetadata?: (snapshot: TikTokScrapeMetrics) => Promise<void> | void
-  onComment?: (comment: TSocialScraperComment) => Promise<void> | void
-}
-
-interface TikTokScrapeResult {
-  displayName: string
-  title: string
-  followers: number
-  commentsCount: number
-  bookmarks: number
-  reposts: number
-  view: number
-  shares: number
-  likes: number
-  comments: TSocialScraperComment[]
-}
-
-interface TikTokScrapeMetrics {
-  displayName: string
-  title: string
-  followers: number
-  commentsCount: number
-  bookmarks: number
-  reposts: number
-  view: number
-  shares: number
-  likes: number
-}
+import type { TikTokScrapeMetrics, TikTokScrapeOptions, TikTokScrapeResult } from '#types/tiktok'
 
 const ACTION_BAR_ROOT = '#one-column-item-0 > div > section.css-jbg155-5e6d46e3--SectionActionBarContainer.e12arnib0'
 const METRIC_TIMEOUT = 15_000
@@ -152,7 +118,7 @@ export const scrapeTiktokVideo = async ({
       followers: 0,
       commentsCount: commentCount,
       bookmarks: bookmarkCount,
-      reposts: 0,
+      reposts: shareCount,
       view: viewCount,
       shares: shareCount,
       likes: likeCount,
@@ -160,7 +126,7 @@ export const scrapeTiktokVideo = async ({
 
     await onMetadata?.(snapshot)
 
-    const comments: TSocialScraperComment[] = []
+    const comments: TikTokScrapeResult['comments'] = []
 
     return {
       ...snapshot,

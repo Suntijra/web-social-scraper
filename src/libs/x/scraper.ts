@@ -1,52 +1,12 @@
 import { chromium } from 'playwright'
 
 import type { TSocialScraperComment } from '#types/social-scraper'
+import type { XCredentials, XMainTweetData, XScrapeMetrics, XScrapeOptions, XScrapeResult } from '#types/x'
 import type { Browser, BrowserContext, Cookie, Page } from 'playwright'
-
-interface XCredentials {
-  authToken: string
-  ct0: string
-}
 
 const DEFAULT_X_AUTH_TOKEN = 'be732f9bd8ba416c0e5f249154dca0a1cac952a6'
 const DEFAULT_X_CT0_TOKEN =
   '76fe636f7c7edeeaa941ca1f80e4cb9658653513602e4eaf22be107ff7ac8c75e453e804c95d06b89a663a8b4bde07f2460b54ed91f2233a08c3bbb445d817deaaa53ef09ca5dbdf173e6c9120dbcdb3'
-
-interface XScrapeOptions {
-  url: string
-  maxComments?: number
-  headless?: boolean
-  credentials?: Partial<XCredentials>
-  onMetadata?: (snapshot: XScrapeMetrics) => Promise<void> | void
-  onComment?: (comment: TSocialScraperComment) => Promise<void> | void
-  signal?: AbortSignal
-}
-
-interface XMainTweetData {
-  displayName: string
-  title: string
-  repostCount: number
-  likeCount: number
-  bookmarkCount: number
-  viewCount: number
-  replyCount: number
-}
-
-interface XScrapeMetrics {
-  displayName: string
-  title: string
-  followers: number
-  commentsCount: number
-  bookmarks: number
-  reposts: number
-  view: number
-  shares: number
-  likes: number
-}
-
-interface XScrapeResult extends XScrapeMetrics {
-  comments: TSocialScraperComment[]
-}
 
 const DEFAULT_MAX_COMMENTS = 20
 
