@@ -47,6 +47,8 @@ interface YouTubeScrapeMetrics {
   likes: number
 }
 
+const UNBOUNDED_COMMENT_LIMIT = Number.POSITIVE_INFINITY
+
 const parseBoolean = (value: string | undefined, fallback: boolean): boolean => {
   if (value === undefined) {
     return fallback
@@ -279,8 +281,11 @@ const collectComments = async (
 ): Promise<TSocialScraperComment[]> => {
   const comments = new Map<string, TSocialScraperComment>()
   let scrollAttempts = 0
-  const maxScrollAttempts = 15
+  const hasFiniteLimit = Number.isFinite(limit) && limit > 0
+  const maxScrollAttempts = hasFiniteLimit ? Math.max(15, Math.ceil(limit / 10)) : 200
   let lastSize = 0
+  const idleTimeoutMs = 60_000
+  let lastNewCommentTimestamp = Date.now()
 
   await page
     .locator('#comments')
@@ -291,7 +296,15 @@ const collectComments = async (
 
   const isAborted = (): boolean => Boolean(options?.signal?.aborted)
 
-  while (!isAborted() && (limit <= 0 || comments.size < limit) && scrollAttempts < maxScrollAttempts) {
+  while (!isAborted()) {
+    if (hasFiniteLimit && comments.size >= limit) {
+      break
+    }
+
+    if (scrollAttempts >= maxScrollAttempts) {
+      break
+    }
+
     const commentElements = await page.locator('ytd-comment-thread-renderer #comment-container').all()
 
     for (const element of commentElements) {
@@ -314,12 +327,13 @@ const collectComments = async (
             text,
           }
           comments.set(key, comment)
+          lastNewCommentTimestamp = Date.now()
           if (options?.onComment) {
             await options.onComment(comment)
           }
         }
 
-        if (limit > 0 && comments.size >= limit) {
+        if (hasFiniteLimit && comments.size >= limit) {
           break
         }
       } catch {
@@ -327,7 +341,7 @@ const collectComments = async (
       }
     }
 
-    if (limit > 0 && comments.size >= limit) {
+    if (hasFiniteLimit && comments.size >= limit) {
       break
     }
 
@@ -342,7 +356,7 @@ const collectComments = async (
       scrollAttempts += 1
     }
 
-    if (scrollAttempts >= maxScrollAttempts) {
+    if (Date.now() - lastNewCommentTimestamp >= idleTimeoutMs) {
       break
     }
 
@@ -350,12 +364,12 @@ const collectComments = async (
     await page.waitForTimeout(2_000)
   }
 
-  return Array.from(comments.values()).slice(0, limit > 0 ? limit : undefined)
+  return Array.from(comments.values()).slice(0, hasFiniteLimit ? limit : undefined)
 }
 
 export const scrapeYouTubeVideo = async ({
   url,
-  maxComments = 20,
+  maxComments,
   headless,
   logger,
   onMetadata,
@@ -389,7 +403,15 @@ export const scrapeYouTubeVideo = async ({
     }
     await onMetadata?.(snapshot)
 
-    const comments = await collectComments(page, maxComments, {
+    const hasCommentCount = metadata.commentCount > 0
+    const inferredCommentTarget =
+      typeof maxComments === 'number' && maxComments >= 0
+        ? maxComments
+        : hasCommentCount
+          ? metadata.commentCount
+          : UNBOUNDED_COMMENT_LIMIT
+
+    const comments = await collectComments(page, inferredCommentTarget, {
       onComment,
       signal,
     })
