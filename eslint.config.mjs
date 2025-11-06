@@ -8,7 +8,7 @@ import globals from 'globals'
 import unusedImportsPlugin from 'eslint-plugin-unused-imports'
 
 export default defineConfig([
-  globalIgnores(['**/node_modules/', '.git/', 'dist/']),
+  globalIgnores(['**/node_modules/', '.git/', 'dist/', 'python/venv/**']),
   {
     ignores: ['node_modules/', 'dist/', 'build/'],
     languageOptions: {
