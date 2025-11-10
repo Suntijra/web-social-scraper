@@ -1,7 +1,12 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
 import dayjs from 'dayjs'
 
 import InvalidParameterError from '#errors/invalid.parameter.error'
 import { cleanPageBody } from '#libs/facebook/bodyCleaner'
+import { runOcrEngagement } from '#libs/facebook/engagementOcr'
+import { exportFacebookCookies } from '#libs/facebook/exportCookies'
 import { detectEngagementStats } from '#libs/facebook/ollamaClient'
 import { openUrlInBrowser } from '#libs/facebook/playwrightRunner'
 import { scrapeTiktokVideo } from '#libs/tiktok/scraper'
@@ -17,6 +22,9 @@ import type {
 } from '#types/social-scraper-stream'
 
 export class SocialScraperService {
+  private static readonly facebookCookiePath =
+    process.env.FACEBOOK_COOKIES_PATH ?? path.resolve(process.cwd(), 'facebook', 'facebook_cookies.txt')
+
   async simulate(
     payload: TSocialScraperRequest,
     options?: SocialScraperSimulateOptions
@@ -70,12 +78,22 @@ export class SocialScraperService {
     options?: SocialScraperSimulateOptions
   ): Promise<TSocialScraperResponse> {
     const { logger } = options ?? {}
+    await this.ensureFacebookSession(profileUrl, logger)
+    const ocrMetrics = await this.tryFacebookOcr(profileUrl, logger)
+    if (ocrMetrics) {
+      logger?.info({ profileUrl, ocrMetrics }, 'ใช้ผลลัพธ์จาก OCR engagement')
+      return this.toResponse('facebook', ocrMetrics)
+    }
+
+    logger?.info({ profileUrl }, 'OCR ไม่มีข้อมูล จะ fallback ไป DOM')
     const snapshot = await openUrlInBrowser(profileUrl)
     const cleanedBody = cleanPageBody(snapshot.bodyHtml)
+
     let commentsCount = 0
     let reposts = 0
     let likes = 0
     let shares = 0
+    const view = 0
 
     try {
       const engagement = await detectEngagementStats(cleanedBody)
@@ -83,9 +101,9 @@ export class SocialScraperService {
       commentsCount = engagement.comments ?? 0
       reposts = engagement.shares ?? 0
       shares = engagement.shares ?? 0
-      logger?.info({ engagement, profileUrl }, 'ดึงข้อมูล engagement จากหน้าเพจสำเร็จ')
+      logger?.info({ engagement, profileUrl }, 'ดึงข้อมูล engagement จากหน้าเพจสำเร็จ (fallback)')
     } catch (error) {
-      logger?.error({ error, profileUrl }, 'ไม่สามารถดึงข้อมูล engagement ได้ จะใช้ค่าเริ่มต้นแทน')
+      logger?.error({ error, profileUrl }, 'fallback ไม่สามารถดึงข้อมูล engagement ได้ จะใช้ค่าเริ่มต้นแทน')
     }
 
     const metrics = {
@@ -95,7 +113,7 @@ export class SocialScraperService {
       commentsCount,
       bookmarks: 0,
       reposts,
-      view: 0,
+      view,
       shares,
       likes,
       comments: [] as TSocialScraperComment[],
@@ -344,6 +362,114 @@ export class SocialScraperService {
 
     await this.emitComplete(emitter, response)
     return response
+  }
+
+  private async ensureFacebookSession(
+    profileUrl: string,
+    logger?: SocialScraperSimulateOptions['logger']
+  ): Promise<void> {
+    if (this.shouldRefreshFacebookCookies()) {
+      try {
+        await exportFacebookCookies({ targetUrl: profileUrl, logger })
+      } catch (error) {
+        logger?.warn({ error, profileUrl }, 'ไม่สามารถรีเฟรชคุกกี้ก่อน OCR ได้ จะลองใช้ session เดิม')
+      }
+    }
+  }
+
+  private parseOcrMetrics(
+    raw: string | null
+  ): { likes: number | null; comments: number | null; shares: number | null; view: number | null } | null {
+    if (!raw) {
+      return null
+    }
+    const jsonMatch = raw.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      return null
+    }
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as Partial<{
+        likes: number | null
+        comments: number | null
+        shares: number | null
+        view: number | null
+      }>
+      return {
+        likes: typeof parsed.likes === 'number' ? parsed.likes : null,
+        comments: typeof parsed.comments === 'number' ? parsed.comments : null,
+        shares: typeof parsed.shares === 'number' ? parsed.shares : null,
+        view: typeof parsed.view === 'number' ? parsed.view : null,
+      }
+    } catch {
+      return null
+    }
+  }
+
+  private async tryFacebookOcr(
+    profileUrl: string,
+    logger?: SocialScraperSimulateOptions['logger']
+  ): Promise<{
+    displayName: string
+    title: string
+    followers: number
+    commentsCount: number
+    bookmarks: number
+    reposts: number
+    view: number
+    shares: number
+    likes: number
+    comments: TSocialScraperComment[]
+  } | null> {
+    try {
+      const ocr = await runOcrEngagement(profileUrl)
+      const parsed = this.parseOcrMetrics(ocr.responseText)
+      if (!parsed) {
+        logger?.warn({ profileUrl }, 'OCR ไม่พบ JSON ที่ต้องการ')
+        return null
+      }
+      return {
+        displayName: '',
+        title: '',
+        followers: 0,
+        commentsCount: parsed.comments ?? 0,
+        bookmarks: 0,
+        reposts: parsed.shares ?? 0,
+        view: parsed.view ?? 0,
+        shares: parsed.shares ?? 0,
+        likes: parsed.likes ?? 0,
+        comments: [],
+      }
+    } catch (error) {
+      logger?.error({ error, profileUrl }, 'เกิดข้อผิดพลาดระหว่าง OCR engagement')
+      return null
+    }
+  }
+
+  private shouldRefreshFacebookCookies(): boolean {
+    const cookiePath = SocialScraperService.facebookCookiePath
+    if (!fs.existsSync(cookiePath)) {
+      return true
+    }
+    try {
+      const content = fs.readFileSync(cookiePath, 'utf8')
+      const lines = content.split('\n').map((line) => line.trim())
+      const cUserLine = lines.find((line) => line && !line.startsWith('#') && line.includes('\tc_user\t'))
+      if (!cUserLine) {
+        return true
+      }
+      const parts = cUserLine.split('\t')
+      if (parts.length < 5) {
+        return true
+      }
+      const expires = Number.parseInt(parts[4] ?? '', 10)
+      if (!Number.isFinite(expires)) {
+        return true
+      }
+      const now = Math.floor(Date.now() / 1000)
+      return expires <= now
+    } catch {
+      return true
+    }
   }
 
   private toResponse(

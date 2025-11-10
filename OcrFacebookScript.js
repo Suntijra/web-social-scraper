@@ -15,8 +15,7 @@ const __dirname = path.dirname(__filename)
 
 const DEFAULT_OUTPUT_DIR = path.resolve(__dirname, 'captures')
 const DEFAULT_URL =
-  process.env.FACEBOOK_OCR_DEFAULT_URL ??
-  'https://www.facebook.com/photo/?fbid=1140504118293032&set=gm.2444124459338516&idorvanity=1806641556420146'
+  process.env.FACEBOOK_OCR_DEFAULT_URL ?? 'https://www.facebook.com/photo/?fbid=842656628141325&set=a.215387227534938'
 const DEFAULT_COOKIES_PATH =
   process.env.FACEBOOK_COOKIES_PATH ?? path.resolve(__dirname, 'facebook', 'facebook_cookies.txt')
 const DEFAULT_PROMPT =
@@ -138,8 +137,7 @@ const callVisionModel = async ({ imageBuffer, prompt }) => {
   if (!rawToken) {
     throw new Error(`Environment variable ${TOKEN_ENV_KEY} is required for authorization.`)
   }
-  console.log('rawToken : ', rawToken)
-  const bearerToken = rawToken
+  const bearerToken = rawToken.trim()
   const imageDataUrl = toBase64DataUrl(imageBuffer)
 
   const payload = buildRequestPayload(imageDataUrl, prompt)
