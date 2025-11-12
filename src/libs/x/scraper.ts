@@ -1,5 +1,7 @@
 import { chromium } from 'playwright'
 
+import { envVariables } from '#factory'
+
 import type { TSocialScraperComment } from '#types/social-scraper'
 import type { XCredentials, XMainTweetData, XScrapeMetrics, XScrapeOptions, XScrapeResult } from '#types/x'
 import type { Browser, BrowserContext, Cookie, Page } from 'playwright'
@@ -48,8 +50,8 @@ const parseCountText = (text: string): number => {
 }
 
 const resolveCredentials = (credentials?: Partial<XCredentials>): XCredentials => {
-  const authToken = credentials?.authToken ?? process.env.X_AUTH_TOKEN ?? DEFAULT_X_AUTH_TOKEN
-  const ct0 = credentials?.ct0 ?? process.env.X_CT0_TOKEN ?? DEFAULT_X_CT0_TOKEN
+  const authToken = credentials?.authToken ?? envVariables.X_AUTH_TOKEN ?? DEFAULT_X_AUTH_TOKEN
+  const ct0 = credentials?.ct0 ?? envVariables.X_CT0_TOKEN ?? DEFAULT_X_CT0_TOKEN
 
   if (!authToken || !ct0) {
     throw new Error('X credentials (auth_token, ct0) are required to scrape tweets')
@@ -266,7 +268,7 @@ export const scrapeXPost = async ({
     throw new Error('URL is required for X scrape')
   }
 
-  const resolvedHeadless = headless ?? parseEnvBoolean(process.env.PLAYWRIGHT_HEADLESS, true)
+  const resolvedHeadless = headless ?? parseEnvBoolean(envVariables.PLAYWRIGHT_HEADLESS, true)
   const resolvedCredentials = resolveCredentials(credentials)
 
   const { browser, context } = await launchBrowser(resolvedHeadless)

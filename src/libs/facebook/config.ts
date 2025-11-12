@@ -1,8 +1,6 @@
 import path from 'node:path'
 
-import dotenv from 'dotenv'
-
-dotenv.config()
+import { envVariables } from '#factory'
 
 type SupportedBrowser = 'chromium' | 'firefox' | 'webkit'
 
@@ -62,20 +60,20 @@ const defaultBaseUrl = 'https://bai-ap.jts.co.th:10602'
 const defaultModel = 'qwen3:30b'
 const defaultStorageState = '.credentials/facebook-storage.json'
 
-const browserEnv = (process.env.PLAYWRIGHT_BROWSER ?? 'chromium').toLowerCase()
+const browserEnv = (envVariables.PLAYWRIGHT_BROWSER ?? 'chromium').toLowerCase()
 
 export const appConfig: AppConfig = {
-  targetUrl: toOptionalString(process.env.TARGET_URL),
-  headless: parseBoolean(process.env.PLAYWRIGHT_HEADLESS ?? undefined, false),
+  targetUrl: toOptionalString(envVariables.TARGET_URL),
+  headless: parseBoolean(envVariables.PLAYWRIGHT_HEADLESS ?? undefined, false),
   browser: isSupportedBrowser(browserEnv) ? browserEnv : 'chromium',
-  ollamaBaseUrl: sanitizeBaseUrl(process.env.OLLAMA_BASE_URL ?? defaultBaseUrl),
-  ollamaModel: process.env.OLLAMA_MODEL ?? defaultModel,
-  ollamaTimeoutMs: parseNumber(process.env.OLLAMA_TIMEOUT_MS ?? undefined, 60_000),
-  ollamaInsecureTls: parseBoolean(process.env.OLLAMA_INSECURE_TLS ?? undefined, false),
-  storageStatePath: resolvePath(process.env.PLAYWRIGHT_STORAGE_PATH ?? defaultStorageState),
-  userDataDir: resolvePath(toOptionalString(process.env.PLAYWRIGHT_USER_DATA_DIR)),
-  navigationTimeoutMs: parseNumber(process.env.PLAYWRIGHT_NAVIGATION_TIMEOUT_MS ?? undefined, 45_000),
-  keepBrowserOpen: parseBoolean(process.env.PLAYWRIGHT_KEEP_OPEN ?? undefined, false),
+  ollamaBaseUrl: sanitizeBaseUrl(envVariables.OLLAMA_BASE_URL ?? defaultBaseUrl),
+  ollamaModel: envVariables.OLLAMA_MODEL ?? defaultModel,
+  ollamaTimeoutMs: parseNumber(envVariables.OLLAMA_TIMEOUT_MS ?? undefined, 60_000),
+  ollamaInsecureTls: parseBoolean(envVariables.OLLAMA_INSECURE_TLS ?? undefined, false),
+  storageStatePath: resolvePath(envVariables.PLAYWRIGHT_STORAGE_PATH ?? defaultStorageState),
+  userDataDir: resolvePath(toOptionalString(envVariables.PLAYWRIGHT_USER_DATA_DIR)),
+  navigationTimeoutMs: parseNumber(envVariables.PLAYWRIGHT_NAVIGATION_TIMEOUT_MS ?? undefined, 45_000),
+  keepBrowserOpen: parseBoolean(envVariables.PLAYWRIGHT_KEEP_OPEN ?? undefined, false),
 }
 
 export const ensureTargetUrl = (): string => {

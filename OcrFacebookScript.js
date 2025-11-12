@@ -15,14 +15,18 @@ const __dirname = path.dirname(__filename)
 
 const DEFAULT_OUTPUT_DIR = path.resolve(__dirname, 'captures')
 const DEFAULT_URL =
-  process.env.FACEBOOK_OCR_DEFAULT_URL ?? 'https://www.facebook.com/photo/?fbid=842656628141325&set=a.215387227534938'
+  process.env.FACEBOOK_OCR_DEFAULT_URL ??
+  'https://www.facebook.com/photo/?fbid=1140504118293032&set=gm.2444124459338516&idorvanity=1806641556420146'
 const DEFAULT_COOKIES_PATH =
   process.env.FACEBOOK_COOKIES_PATH ?? path.resolve(__dirname, 'facebook', 'facebook_cookies.txt')
 const DEFAULT_PROMPT =
   'You are an assistant that reads engagement metrics from Facebook screenshots. Inspect the image and extract total counts for reactions/likes, comments, shares, and video views (if present). Respond ONLY with JSON using this schema: {"likes": number|null, "comments": number|null, "shares": number|null, "view": number|null, "evidence": string|null}. Convert abbreviations like 2.3K/1.1M into absolute numbers. Treat view/viewers/plays as the “view” value. If a count is missing or unclear, set it to null. evidence should include the original text snippet you used, or null if none. Do not add extra text.'
 const DEFAULT_MODEL = process.env.FACEBOOK_OCR_MODEL ?? 'qwen3-vl-30b'
-const DEFAULT_API_URL = process.env.FACEBOOK_OCR_URL ?? 'https://bai-ap.jts.co.th:10628/v1/chat/completions'
+const DEFAULT_API_URL =
+  process.env.FACEBOOK_OCR_URL ?? 'https://qwen3-vl-30b.bai-ap.jts.co.th:10206/v1/chat/completions'
 const TOKEN_ENV_KEY = 'FACEBOOK_OCR_TOKEN'
+const SCROLL_ENABLED = process.env.FACEBOOK_OCR_ENABLE_SCROLL === '1'
+const DEFAULT_API_TIMEOUT_MS = Number.parseInt(process.env.FACEBOOK_OCR_TIMEOUT ?? '120000', 10)
 
 const ensureOutputDir = async (dirPath) => {
   await fs.mkdir(dirPath, { recursive: true })
@@ -137,7 +141,8 @@ const callVisionModel = async ({ imageBuffer, prompt }) => {
   if (!rawToken) {
     throw new Error(`Environment variable ${TOKEN_ENV_KEY} is required for authorization.`)
   }
-  const bearerToken = rawToken.trim()
+  console.log('rawToken : ', rawToken)
+  const bearerToken = rawToken
   const imageDataUrl = toBase64DataUrl(imageBuffer)
 
   const payload = buildRequestPayload(imageDataUrl, prompt)
@@ -146,7 +151,7 @@ const callVisionModel = async ({ imageBuffer, prompt }) => {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${bearerToken}`,
     },
-    timeout: Number.parseInt(process.env.FACEBOOK_OCR_TIMEOUT ?? '120000', 10),
+    timeout: DEFAULT_API_TIMEOUT_MS,
   })
   return data
 }
@@ -163,7 +168,7 @@ const parseCliArgs = () => {
 const run = async () => {
   const { url, outputDir, prompt } = parseCliArgs()
   if (!url) {
-    throw new Error('No target URL provided and DEFAULT_URL is empty. Set FACEBOOK_OCR_DEFAULT_URL or pass a URL.')
+    throw new Error('No target URL provided. Pass a URL argument when running the script.')
   }
   const browser = await chromium.launch({ headless: false, args: ['--disable-blink-features=AutomationControlled'] })
   const context = await browser.newContext()
@@ -179,7 +184,7 @@ const run = async () => {
     console.log(`Navigating to ${url}`)
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 })
     await delay(1500)
-    const shouldScroll = process.env.FACEBOOK_OCR_ENABLE_SCROLL === '1'
+    const shouldScroll = SCROLL_ENABLED
     if (shouldScroll) {
       console.log('Auto scrolling to bottom (FACEBOOK_OCR_ENABLE_SCROLL=1)...')
       await autoScroll(page)
@@ -200,6 +205,13 @@ const run = async () => {
     const outputJson = path.join(outputDir, 'ocr-response.json')
     await fs.writeFile(outputJson, JSON.stringify(response, null, 2), 'utf8')
     console.log(`Response saved to ${outputJson}`)
+
+    try {
+      await fs.unlink(filename)
+      console.log(`Removed capture ${filename}`)
+    } catch (error) {
+      console.warn(`Failed to remove capture ${filename}: ${error instanceof Error ? error.message : error}`)
+    }
   } finally {
     await page.close()
     await context.close()

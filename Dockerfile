@@ -16,6 +16,7 @@ WORKDIR /app
 # Install dependencies first to leverage Docker layer caching
 COPY bun.lock package.json ./
 RUN bun install --frozen-lockfile
+RUN npx playwright install chrome
 
 # Copy the rest of the workspace (TypeScript sources, config, etc.)
 COPY . .

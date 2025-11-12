@@ -6,7 +6,7 @@ import type { Bindings, Variables } from '#types/app'
 import '#types/global.d'
 import type { AppEnvVariables } from '#types/env'
 
-export const envVariables = envSchema.parse(process.env)
+export const envVariables: AppEnvVariables = envSchema.parse(process.env)
 
 export const factory = createFactory<{ Bindings: Bindings; Variables: Variables }>({
   initApp: (app) => {

@@ -4,11 +4,11 @@ import path from 'node:path'
 import dayjs from 'dayjs'
 
 import InvalidParameterError from '#errors/invalid.parameter.error'
-import { cleanPageBody } from '#libs/facebook/bodyCleaner'
 import { runOcrEngagement } from '#libs/facebook/engagementOcr'
-import { exportFacebookCookies } from '#libs/facebook/exportCookies'
-import { detectEngagementStats } from '#libs/facebook/ollamaClient'
-import { openUrlInBrowser } from '#libs/facebook/playwrightRunner'
+import logging from '#libs/logger'
+// import { cleanPageBody } from '#libs/facebook/bodyCleaner'
+// import { detectEngagementStats } from '#libs/facebook/ollamaClient'
+// import { openUrlInBrowser } from '#libs/facebook/playwrightRunner'
 import { scrapeTiktokVideo } from '#libs/tiktok/scraper'
 import { scrapeXPost } from '#libs/x/scraper'
 import { scrapeYouTubeVideo } from '#libs/youtube/scraper'
@@ -22,8 +22,8 @@ import type {
 } from '#types/social-scraper-stream'
 
 export class SocialScraperService {
-  private static readonly facebookCookiePath =
-    process.env.FACEBOOK_COOKIES_PATH ?? path.resolve(process.cwd(), 'facebook', 'facebook_cookies.txt')
+  private static readonly facebookCookiePath = path.resolve(process.cwd(), 'facebook', 'facebook_cookies.txt')
+  private static readonly requiredFacebookCookies = ['c_user', 'xs']
 
   async simulate(
     payload: TSocialScraperRequest,
@@ -78,19 +78,27 @@ export class SocialScraperService {
     options?: SocialScraperSimulateOptions
   ): Promise<TSocialScraperResponse> {
     const { logger } = options ?? {}
-    await this.ensureFacebookSession(profileUrl, logger)
+    this.ensureFacebookCookiesAvailable()
+    logging.logger.info({ profileUrl }, '[facebook] simulateFacebook: starting OCR OCR-only flow')
     const ocrMetrics = await this.tryFacebookOcr(profileUrl, logger)
     if (ocrMetrics) {
       logger?.info({ profileUrl, ocrMetrics }, 'ใช้ผลลัพธ์จาก OCR engagement')
+      logging.logger.info({ profileUrl }, '[facebook] simulateFacebook: OCR success')
       return this.toResponse('facebook', ocrMetrics)
     }
 
+    logger?.warn({ profileUrl }, 'ปิด fallback DOM ชั่วคราว ต้องมีผลจาก OCR เท่านั้น')
+    throw new InvalidParameterError(
+      'Facebook OCR ไม่สามารถอ่าน engagement ได้ในตอนนี้ กรุณาลองใหม่หลังสร้างสกรีนช็อตอีกครั้ง'
+    )
+
+    /*
+    // เดิม: fallback DOM scraping
     logger?.info({ profileUrl }, 'OCR ไม่มีข้อมูล จะ fallback ไป DOM')
     const snapshot = await openUrlInBrowser(profileUrl)
     const cleanedBody = cleanPageBody(snapshot.bodyHtml)
 
     let commentsCount = 0
-    let reposts = 0
     let likes = 0
     let shares = 0
     const view = 0
@@ -99,7 +107,6 @@ export class SocialScraperService {
       const engagement = await detectEngagementStats(cleanedBody)
       likes = engagement.likes ?? 0
       commentsCount = engagement.comments ?? 0
-      reposts = engagement.shares ?? 0
       shares = engagement.shares ?? 0
       logger?.info({ engagement, profileUrl }, 'ดึงข้อมูล engagement จากหน้าเพจสำเร็จ (fallback)')
     } catch (error) {
@@ -112,7 +119,7 @@ export class SocialScraperService {
       followers: 0,
       commentsCount,
       bookmarks: 0,
-      reposts,
+      reposts: 0,
       view,
       shares,
       likes,
@@ -120,6 +127,7 @@ export class SocialScraperService {
     }
 
     return this.toResponse('facebook', metrics)
+    */
   }
 
   private async simulateX({ profileUrl }: TSocialScraperRequest): Promise<TSocialScraperResponse> {
@@ -364,19 +372,6 @@ export class SocialScraperService {
     return response
   }
 
-  private async ensureFacebookSession(
-    profileUrl: string,
-    logger?: SocialScraperSimulateOptions['logger']
-  ): Promise<void> {
-    if (this.shouldRefreshFacebookCookies()) {
-      try {
-        await exportFacebookCookies({ targetUrl: profileUrl, logger })
-      } catch (error) {
-        logger?.warn({ error, profileUrl }, 'ไม่สามารถรีเฟรชคุกกี้ก่อน OCR ได้ จะลองใช้ session เดิม')
-      }
-    }
-  }
-
   private parseOcrMetrics(
     raw: string | null
   ): { likes: number | null; comments: number | null; shares: number | null; view: number | null } | null {
@@ -421,10 +416,17 @@ export class SocialScraperService {
     comments: TSocialScraperComment[]
   } | null> {
     try {
+      const activeLogger = logger ?? logging.logger
+      activeLogger.info({ profileUrl }, '[facebook] tryFacebookOcr: invoking runOcrEngagement')
       const ocr = await runOcrEngagement(profileUrl)
+      activeLogger.info(
+        { profileUrl, screenshotPath: ocr.screenshotPath },
+        '[facebook] tryFacebookOcr: screenshot captured'
+      )
       const parsed = this.parseOcrMetrics(ocr.responseText)
       if (!parsed) {
         logger?.warn({ profileUrl }, 'OCR ไม่พบ JSON ที่ต้องการ')
+        activeLogger.warn({ profileUrl }, '[facebook] tryFacebookOcr: failed to parse OCR JSON')
         return null
       }
       return {
@@ -433,7 +435,7 @@ export class SocialScraperService {
         followers: 0,
         commentsCount: parsed.comments ?? 0,
         bookmarks: 0,
-        reposts: parsed.shares ?? 0,
+        reposts: 0,
         view: parsed.view ?? 0,
         shares: parsed.shares ?? 0,
         likes: parsed.likes ?? 0,
@@ -441,34 +443,46 @@ export class SocialScraperService {
       }
     } catch (error) {
       logger?.error({ error, profileUrl }, 'เกิดข้อผิดพลาดระหว่าง OCR engagement')
+      logging.logger.error({ error, profileUrl }, '[facebook] tryFacebookOcr: error while running OCR')
       return null
     }
   }
 
-  private shouldRefreshFacebookCookies(): boolean {
+  private ensureFacebookCookiesAvailable(): void {
     const cookiePath = SocialScraperService.facebookCookiePath
+    logging.logger.info({ cookiePath }, '[facebook] ensureCookies: checking cookie file')
     if (!fs.existsSync(cookiePath)) {
-      return true
+      throw new InvalidParameterError(
+        `ไม่พบไฟล์ Facebook cookies ที่ ${cookiePath}. กรุณารันสคริปต์ export คุกกี้ก่อนใช้งาน`
+      )
     }
     try {
       const content = fs.readFileSync(cookiePath, 'utf8')
       const lines = content.split('\n').map((line) => line.trim())
-      const cUserLine = lines.find((line) => line && !line.startsWith('#') && line.includes('\tc_user\t'))
-      if (!cUserLine) {
-        return true
-      }
-      const parts = cUserLine.split('\t')
-      if (parts.length < 5) {
-        return true
-      }
-      const expires = Number.parseInt(parts[4] ?? '', 10)
-      if (!Number.isFinite(expires)) {
-        return true
-      }
       const now = Math.floor(Date.now() / 1000)
-      return expires <= now
-    } catch {
-      return true
+      for (const cookieName of SocialScraperService.requiredFacebookCookies) {
+        const line = lines.find((entry) => entry && !entry.startsWith('#') && entry.includes(`\t${cookieName}\t`))
+        if (!line) {
+          throw new InvalidParameterError(
+            `ไฟล์ Facebook cookies ไม่มีคุกกี้ ${cookieName}. กรุณาอัปเดตไฟล์ facebook_cookies.txt`
+          )
+        }
+        const parts = line.split('\t')
+        if (parts.length < 5) {
+          throw new InvalidParameterError('โครงสร้างไฟล์ Facebook cookies ไม่ถูกต้อง กรุณาสร้างใหม่')
+        }
+        const expires = Number.parseInt(parts[4] ?? '', 10)
+        if (!Number.isFinite(expires) || expires <= now) {
+          logging.logger.warn({ cookieName }, '[facebook] ensureCookies: cookie expired')
+          throw new InvalidParameterError('Facebook cookies หมดอายุแล้ว กรุณาสร้างไฟล์ใหม่')
+        }
+      }
+    } catch (error) {
+      if (error instanceof InvalidParameterError) {
+        throw error
+      }
+      logging.logger.error({ error }, '[facebook] ensureCookies: failed to read cookies file')
+      throw new InvalidParameterError('ไม่สามารถอ่านไฟล์ Facebook cookies ได้ กรุณาตรวจสอบสิทธิ์ไฟล์')
     }
   }
 

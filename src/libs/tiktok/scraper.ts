@@ -1,9 +1,11 @@
 import { chromium, type Page } from 'playwright'
 
+import { envVariables } from '#factory'
+
 import type { TikTokScrapeMetrics, TikTokScrapeOptions, TikTokScrapeResult } from '#types/tiktok'
 
 const ACTION_BAR_ROOT = '#one-column-item-0 > div > section.css-jbg155-5e6d46e3--SectionActionBarContainer.e12arnib0'
-const METRIC_TIMEOUT = 15_000
+const METRIC_TIMEOUT = 5_000
 
 const parseBoolean = (value: string | undefined, fallback: boolean): boolean => {
   if (value === undefined) {
@@ -71,8 +73,8 @@ export const scrapeTiktokVideo = async ({
     throw new Error('URL is required for TikTok scrape')
   }
 
-  const resolvedHeadless = headless ?? parseBoolean(process.env.PLAYWRIGHT_HEADLESS, false)
-  const resolvedChannel = browserChannel ?? process.env.PLAYWRIGHT_TIKTOK_BROWSER_CHANNEL ?? 'chrome'
+  const resolvedHeadless = headless ?? parseBoolean(envVariables.PLAYWRIGHT_HEADLESS, false)
+  const resolvedChannel = browserChannel ?? envVariables.PLAYWRIGHT_TIKTOK_BROWSER_CHANNEL ?? 'chrome'
 
   const browser = await chromium.launch({ headless: resolvedHeadless, channel: resolvedChannel, timeout: 60_000 })
   const page = await browser.newPage()
@@ -89,7 +91,7 @@ export const scrapeTiktokVideo = async ({
   signal?.addEventListener('abort', abortListener, { once: true })
 
   try {
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 90_000 })
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 30_000 })
 
     if (signal?.aborted) {
       throw new Error('TikTok scraping aborted')
@@ -118,7 +120,7 @@ export const scrapeTiktokVideo = async ({
       followers: 0,
       commentsCount: commentCount,
       bookmarks: bookmarkCount,
-      reposts: shareCount,
+      reposts: 0,
       view: viewCount,
       shares: shareCount,
       likes: likeCount,

@@ -17,14 +17,12 @@ const callback = async (info: AddressInfo) => {
   )
 }
 
-const cert: Record<string, unknown> = {
-  cert: fs.readFileSync('.credentials/localhost.pem'),
-  key: fs.readFileSync('.credentials/localhost-key.pem'),
+if (envVariables.NODE_ENV === 'local') {
+  const cert: Record<string, unknown> = {
+    cert: fs.readFileSync('.credentials/localhost.pem'),
+    key: fs.readFileSync('.credentials/localhost-key.pem'),
+  }
+  serve({ ...app, hostname: envVariables.HOST, port: envVariables.PORT, createServer, serverOptions: cert }, callback)
+} else {
+  serve({ ...app, hostname: envVariables.HOST, port: envVariables.PORT }, callback)
 }
-
-serve(
-  envVariables.NODE_ENV === 'local'
-    ? { ...app, hostname: envVariables.HOST, port: envVariables.PORT, createServer, serverOptions: cert }
-    : { ...app, hostname: envVariables.HOST, port: envVariables.PORT },
-  callback
-)

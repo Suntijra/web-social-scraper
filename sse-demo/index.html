@@ -99,7 +99,7 @@
         API Origin
         <input id="origin" type="url" value="https://localhost:8000" required />
       </label>
-      <button type="submit">เริ่มสตรีม</button>
+      <button type="button" id="startBtn">เริ่มสตรีม</button>
       <button type="button" id="stopBtn" disabled>หยุด</button>
     </form>
 
@@ -112,14 +112,18 @@
     <pre id="log">พร้อมเชื่อมต่อ...</pre>
 
     <script>
-      const form = document.getElementById('sse-form')
+      // กำหนดค่า API key สำหรับ header x-api-key ได้ที่นี่ (ปล่อยว่างหากไม่ต้องการ)
+      const API_KEY_HEADER = 'x-api-key'
+      const API_KEY_VALUE = '76212de9-923d-4d92-892f-93868d427ebd'
+
+      const startBtn = document.getElementById('startBtn')
       const stopBtn = document.getElementById('stopBtn')
       const log = document.getElementById('log')
       const statusText = document.getElementById('statusText')
       const metricsCount = document.getElementById('metricsCount')
       const commentsCount = document.getElementById('commentsCount')
 
-      /** @type {EventSource | null} */
+      /** @type {AbortController | null} */
       let source = null
 
       const appendLog = (label, payload) => {
@@ -134,11 +138,11 @@
 
       const closeSource = () => {
         if (source) {
-          source.close()
+          source.abort()
           source = null
         }
         stopBtn.disabled = true
-        form.querySelector('button[type="submit"]').disabled = false
+        startBtn.disabled = false
         setStatus('ว่าง')
       }
 
@@ -147,13 +151,7 @@
         closeSource()
       })
 
-      form.addEventListener('submit', (event) => {
-        event.preventDefault()
-
-        if (source) {
-          source.close()
-        }
-
+      startBtn.addEventListener('click', () => {
         const platform = document.getElementById('platform').value
         const profileUrl = document.getElementById('profileUrl').value.trim()
         const origin = document.getElementById('origin').value.trim().replace(/\/+$/, '')
@@ -171,36 +169,140 @@
         metricsCount.textContent = '0'
         commentsCount.textContent = '0'
         stopBtn.disabled = false
-        form.querySelector('button[type="submit"]').disabled = true
+        startBtn.disabled = true
 
-        source = new EventSource(streamUrl, { withCredentials: false })
+        startStream(streamUrl)
+      })
 
-        source.addEventListener('open', () => {
+      const startStream = async (url) => {
+        if (source) {
+          source.abort()
+        }
+
+        const controller = new AbortController()
+        source = controller
+
+        try {
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              Accept: 'text/event-stream',
+              ...(API_KEY_VALUE ? { [API_KEY_HEADER]: API_KEY_VALUE } : {}),
+            },
+            signal: controller.signal,
+          })
+
+          if (!response.ok || !response.body) {
+            throw new Error(`เชื่อมต่อไม่สำเร็จ (${response.status})`)
+          }
+
           setStatus('เชื่อมต่อแล้ว')
           appendLog('open', {})
-        })
 
-        source.addEventListener('metrics', (event) => {
-          metricsCount.textContent = String(Number(metricsCount.textContent) + 1)
-          appendLog('metrics', JSON.parse(event.data))
-        })
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
 
-        source.addEventListener('comment', (event) => {
-          commentsCount.textContent = String(Number(commentsCount.textContent) + 1)
-          appendLog('comment', JSON.parse(event.data))
-        })
+          while (true) {
+            const { value, done } = await reader.read()
+            if (done) {
+              break
+            }
+            buffer += decoder.decode(value, { stream: true })
+            buffer = processSseBuffer(buffer)
+          }
 
-        source.addEventListener('complete', (event) => {
-          appendLog('complete', JSON.parse(event.data))
+          appendLog('complete', { message: 'การเชื่อมต่อสิ้นสุดจากเซิร์ฟเวอร์' })
           setStatus('เสร็จสิ้น')
+        } catch (error) {
+          if (controller.signal.aborted) {
+            appendLog('abort', {})
+          } else {
+            appendLog('error', { message: error.message })
+            setStatus('ผิดพลาด')
+          }
+        } finally {
           closeSource()
-        })
+        }
+      }
 
-        source.addEventListener('error', (event) => {
-          appendLog('error', { message: 'เชื่อมต่อผิดพลาด', event })
-          setStatus('ผิดพลาด')
-          closeSource()
-        })
+      const processSseBuffer = (buffer) => {
+        let remainder = buffer
+        let boundary
+
+        while ((boundary = remainder.indexOf('\n\n')) !== -1) {
+          const rawEvent = remainder.slice(0, boundary).trim()
+          remainder = remainder.slice(boundary + 2)
+          if (!rawEvent) {
+            continue
+          }
+
+          const parsed = parseSseEvent(rawEvent)
+          if (parsed) {
+            handleSseEvent(parsed)
+          }
+        }
+
+        return remainder
+      }
+
+      const parseSseEvent = (raw) => {
+        const lines = raw.split('\n')
+        let event = 'message'
+        const dataChunks = []
+
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            event = line.slice(6).trim()
+          } else if (line.startsWith('data:')) {
+            dataChunks.push(line.slice(5).trim())
+          }
+        }
+
+        if (dataChunks.length === 0) {
+          return null
+        }
+
+        const rawData = dataChunks.join('\n')
+        let payload
+        try {
+          payload = JSON.parse(rawData)
+        } catch {
+          payload = rawData
+        }
+
+        return { event, payload }
+      }
+
+      const handleSseEvent = ({ event, payload }) => {
+        switch (event) {
+          case 'metrics':
+            metricsCount.textContent = String(Number(metricsCount.textContent) + 1)
+            appendLog('metrics', payload)
+            break
+          case 'comment':
+            commentsCount.textContent = String(Number(commentsCount.textContent) + 1)
+            appendLog('comment', payload)
+            break
+          case 'complete':
+            appendLog('complete', payload)
+            setStatus('เสร็จสิ้น')
+            closeSource()
+            break
+          case 'error':
+            appendLog('error', payload)
+            setStatus('ผิดพลาด')
+            closeSource()
+            break
+          default:
+            appendLog(event, payload)
+        }
+      }
+
+      window.addEventListener('beforeunload', () => {
+        if (source) {
+          source.abort()
+        }
       })
     </script>
   </body>

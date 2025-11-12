@@ -1,13 +1,12 @@
 services:
-  web:
+  web-social-scraper:
     build:
       context: .
-    environment:
-      NODE_ENV: production
-      HOST: 0.0.0.0
-      PORT: 8000
-      PLAYWRIGHT_BROWSER: chromium
-      PLAYWRIGHT_HEADLESS: '1'
     ports:
       - '8000:8000'
-    restart: unless-stopped
+    volumes:
+      - ./facebook:/app/facebook
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production

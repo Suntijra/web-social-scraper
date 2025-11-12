@@ -1,5 +1,7 @@
 import { chromium } from 'playwright'
 
+import { envVariables } from '#factory'
+
 import type { TSocialScraperComment } from '#types/social-scraper'
 import type { YouTubeMetadata, YouTubeScrapeMetrics, YouTubeScrapeOptions, YouTubeScrapeResult } from '#types/youtube'
 import type { PinoLogger } from 'hono-pino'
@@ -338,7 +340,7 @@ export const scrapeYouTubeVideo = async ({
     throw new Error('URL is required for YouTube scrape')
   }
 
-  const resolvedHeadless = headless ?? parseBoolean(process.env.PLAYWRIGHT_HEADLESS, true)
+  const resolvedHeadless = headless ?? parseBoolean(envVariables.PLAYWRIGHT_HEADLESS, true)
 
   const { browser, context } = await launchBrowser(resolvedHeadless)
 

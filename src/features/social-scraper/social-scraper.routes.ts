@@ -2,6 +2,7 @@ import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 
+import { envVariables } from '#factory'
 import { socialScraperRequestSchema } from '#schemas/social-scraper.schema'
 
 import { SocialScraperController } from './social-scraper.controller'
@@ -18,10 +19,25 @@ route.use(
   '*',
   cors({
     origin: '*',
-    allowHeaders: ['Content-Type', 'Accept'],
+    allowHeaders: ['Content-Type', 'Accept', 'X-API-Key'],
     allowMethods: ['GET', 'POST', 'OPTIONS'],
   })
 )
+
+route.use('*', async (c, next) => {
+  if (c.req.method === 'OPTIONS') {
+    return next()
+  }
+  const configuredKey = envVariables.SOCIAL_SCRAPER_API_KEY
+  if (!configuredKey) {
+    return c.json({ message: 'API key is not configured.' }, 500)
+  }
+  const providedKey = c.req.header('x-api-key')
+  if (providedKey !== configuredKey) {
+    return c.json({ message: 'Unauthorized' }, 401)
+  }
+  return next()
+})
 
 route.post(
   '/',
