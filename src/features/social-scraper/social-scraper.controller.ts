@@ -21,7 +21,7 @@ export class SocialScraperController {
   async streamScrape(c: Context) {
     const payload = c.req.valid('query' as never) as TSocialScraperRequest
 
-    return streamSSE(c, async (stream) => {
+    const response = streamSSE(c, async (stream) => {
       const abortSignal = (c.req.raw as Request | undefined)?.signal ?? new AbortController().signal
 
       const emitter = {
@@ -68,5 +68,8 @@ export class SocialScraperController {
         }
       }
     })
+
+    response.headers.delete('Transfer-Encoding') // Let Node/Nginx manage Transfer-Encoding to avoid duplicate headers.
+    return response
   }
 }
